@@ -237,6 +237,9 @@ type PXCScheduledBackup struct {
 	// Once this threshold is reached, the backup will be marked as failed. Default is 300 seconds (5m).
 	// +kubebuilder:default:=300
 	RunningDeadlineSeconds *int64 `json:"runningDeadlineSeconds,omitempty"`
+	// SkipBucketCheck skips the bucket existence check during storage client initialization.
+	// This can be useful when the backup service account doesn't have HeadBucket permissions.
+	SkipBucketCheck bool `json:"skipBucketCheck,omitempty"`
 }
 
 func (b *PXCScheduledBackup) GetAllowParallel() bool {

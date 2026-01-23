@@ -165,6 +165,11 @@ func getS3Options(
 		}
 	}
 
+	skipBucketCheck := false
+	if cluster.Spec.Backup != nil {
+		skipBucketCheck = cluster.Spec.Backup.SkipBucketCheck
+	}
+
 	return &S3Options{
 		Endpoint:        s3.EndpointURL,
 		AccessKeyID:     accessKeyID,
@@ -174,6 +179,7 @@ func getS3Options(
 		Region:          region,
 		VerifyTLS:       verify,
 		CABundle:        caBundle,
+		SkipBucketCheck: skipBucketCheck,
 	}, nil
 }
 
@@ -222,6 +228,11 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 		}
 	}
 
+	skipBucketCheck := false
+	if cluster != nil && cluster.Spec.Backup != nil {
+		skipBucketCheck = cluster.Spec.Backup.SkipBucketCheck
+	}
+
 	return &S3Options{
 		Endpoint:        backup.Status.S3.EndpointURL,
 		AccessKeyID:     accessKeyID,
@@ -231,6 +242,7 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 		Region:          region,
 		VerifyTLS:       verifyTLS,
 		CABundle:        caBundle,
+		SkipBucketCheck: skipBucketCheck,
 	}, nil
 }
 
@@ -245,6 +257,7 @@ type S3Options struct {
 	Region          string
 	VerifyTLS       bool
 	CABundle        []byte
+	SkipBucketCheck bool
 }
 
 func (o *S3Options) Type() api.BackupStorageType {

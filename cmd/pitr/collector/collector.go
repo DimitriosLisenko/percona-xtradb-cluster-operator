@@ -98,6 +98,7 @@ type Config struct {
 	VerifyTLS          bool    `env:"VERIFY_TLS" envDefault:"true"`
 	TimeoutSeconds     float64 `env:"TIMEOUT_SECONDS" envDefault:"60"`
 	GTIDCacheKey       string  `env:"GTID_CACHE_KEY,required"`
+	SkipBucketCheck    bool    `env:"SKIP_BUCKET_CHECK" envDefault:"false"`
 }
 
 type BackupS3 struct {
@@ -144,7 +145,7 @@ func New(ctx context.Context, c Config) (*Collector, error) {
 			return nil, errors.Wrap(err, "read CA bundle file")
 		}
 
-		s, err = storage.NewS3(ctx, c.BackupStorageS3.Endpoint, c.BackupStorageS3.AccessKeyID, c.BackupStorageS3.AccessKey, bucketArr[0], prefix, c.BackupStorageS3.Region, c.VerifyTLS, caBundle)
+		s, err = storage.NewS3(ctx, c.BackupStorageS3.Endpoint, c.BackupStorageS3.AccessKeyID, c.BackupStorageS3.AccessKey, bucketArr[0], prefix, c.BackupStorageS3.Region, c.VerifyTLS, caBundle, c.SkipBucketCheck)
 		if err != nil {
 			return nil, errors.Wrap(err, "new storage manager")
 		}

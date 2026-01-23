@@ -42,7 +42,7 @@ func NewClient(ctx context.Context, opts Options) (Storage, error) {
 		if !ok {
 			return nil, errors.New("invalid options type")
 		}
-		return NewS3(ctx, opts.Endpoint, opts.AccessKeyID, opts.SecretAccessKey, opts.BucketName, opts.Prefix, opts.Region, opts.VerifyTLS, opts.CABundle)
+		return NewS3(ctx, opts.Endpoint, opts.AccessKeyID, opts.SecretAccessKey, opts.BucketName, opts.Prefix, opts.Region, opts.VerifyTLS, opts.CABundle, opts.SkipBucketCheck)
 	case api.BackupStorageAzure:
 		opts, ok := opts.(*AzureOptions)
 		if !ok {
@@ -71,6 +71,7 @@ func NewS3(
 	region string,
 	verifyTLS bool,
 	caBundle []byte,
+	skipBucketCheck bool,
 ) (Storage, error) {
 	if endpoint == "" {
 		endpoint = "https://s3.amazonaws.com"
@@ -105,6 +106,19 @@ func NewS3(
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "new minio client")
+	}
+
+	if !skipBucketCheck {
+		bucketExists, err := minioClient.BucketExists(ctx, bucketName)
+		if err != nil {
+			if merr, ok := err.(minio.ErrorResponse); ok && merr.Code == "301 Moved Permanently" {
+				return nil, errors.Errorf("%s region: %s bucket: %s", merr.Code, merr.Region, merr.BucketName)
+			}
+			return nil, errors.Wrap(err, "failed to check if bucket exists")
+		}
+		if !bucketExists {
+			return nil, errors.Errorf("bucket %s does not exist", bucketName)
+		}
 	}
 
 	return &S3{
