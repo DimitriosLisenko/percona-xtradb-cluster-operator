@@ -332,6 +332,13 @@ func getStorageEnvs(cr *api.PerconaXtraDBCluster) ([]corev1.EnvVar, error) {
 		})
 	}
 
+	if cr.Spec.Backup.SkipBucketCheck {
+		envs = append(envs, corev1.EnvVar{
+			Name:  "SKIP_BUCKET_CHECK",
+			Value: "true",
+		})
+	}
+
 	return envs, nil
 }
 

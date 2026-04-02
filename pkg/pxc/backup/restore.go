@@ -478,6 +478,13 @@ func restoreJobEnvs(bcp *api.PerconaXtraDBClusterBackup, cr *api.PerconaXtraDBCl
 		Value: strconv.FormatBool(verifyTLS),
 	})
 
+	if cluster.Spec.Backup != nil && cluster.Spec.Backup.SkipBucketCheck {
+		envs = append(envs, corev1.EnvVar{
+			Name:  "SKIP_BUCKET_CHECK",
+			Value: "true",
+		})
+	}
+
 	switch bcp.Status.GetStorageType(cluster) {
 	case api.BackupStorageAzure:
 		azureEnvs, err := azureEnvs(cr, bcp, cluster, destination, pitr)
