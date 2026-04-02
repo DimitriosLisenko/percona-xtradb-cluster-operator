@@ -55,6 +55,7 @@ func GetOptionsFromBackupConfig(cfg *xbscapi.BackupConfig) (Options, error) {
 			Region:          cfg.S3.Region,
 			VerifyTLS:       cfg.VerifyTls,
 			ForcePathStyle:  cfg.S3.ForcePathStyle,
+			SkipBucketCheck: cfg.SkipBucketCheck,
 		}, nil
 	case xbscapi.BackupStorageType_AZURE:
 		return &AzureOptions{
@@ -211,6 +212,7 @@ func getS3Options(
 		VerifyTLS:       verify,
 		CABundle:        caBundle,
 		ForcePathStyle:  s3.ForcePathStyle,
+		SkipBucketCheck: cluster.Spec.Backup.SkipBucketCheck,
 	}, nil
 }
 
@@ -267,6 +269,13 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 		}
 	}
 
+	// Default to skipping the bucket check when the cluster is deleted (nil),
+	// so that backup cleanup finalizers can proceed without HeadBucket permissions.
+	skipBucketCheck := cluster == nil
+	if cluster != nil && cluster.Spec.Backup != nil {
+		skipBucketCheck = cluster.Spec.Backup.SkipBucketCheck
+	}
+
 	return &S3Options{
 		Endpoint:        endpoint,
 		AccessKeyID:     accessKeyID,
@@ -278,6 +287,7 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 		VerifyTLS:       verifyTLS,
 		CABundle:        caBundle,
 		ForcePathStyle:  backup.Status.S3.ForcePathStyle,
+		SkipBucketCheck: skipBucketCheck,
 	}, nil
 }
 
@@ -294,6 +304,7 @@ type S3Options struct {
 	VerifyTLS       bool
 	CABundle        []byte
 	ForcePathStyle  bool
+	SkipBucketCheck bool
 }
 
 func (o *S3Options) Type() api.BackupStorageType {

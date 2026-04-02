@@ -134,7 +134,12 @@ func (r *ReconcilePerconaXtraDBClusterBackup) Reconcile(ctx context.Context, req
 		return reconcile.Result{}, err
 	}
 
-	err = r.tryRunBackupFinalizers(ctx, cr)
+	cluster, err := r.getCluster(ctx, cr)
+	if err != nil && !k8sErrors.IsNotFound(errors.Cause(err)) {
+		return reconcile.Result{}, errors.Wrap(err, "get cluster")
+	}
+
+	err = r.tryRunBackupFinalizers(ctx, cr, cluster)
 	if err != nil {
 		return reconcile.Result{}, errors.Wrap(err, "run finalizers")
 	}
@@ -155,9 +160,8 @@ func (r *ReconcilePerconaXtraDBClusterBackup) Reconcile(ctx context.Context, req
 		return rr, nil
 	}
 
-	cluster, err := r.getCluster(ctx, cr)
-	if err != nil {
-		return reconcile.Result{}, errors.Wrap(err, "get cluster")
+	if cluster == nil {
+		return reconcile.Result{}, errors.New("cluster not found")
 	}
 
 	log = log.WithValues("cluster", cluster.Name)
@@ -399,6 +403,13 @@ func (r *ReconcilePerconaXtraDBClusterBackup) createBackupJob(
 		})
 	}
 
+	if cluster.Spec.Backup.SkipBucketCheck {
+		job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
+			Name:  "SKIP_BUCKET_CHECK",
+			Value: "true",
+		})
+	}
+
 	// Set PerconaXtraDBClusterBackup instance as the owner and controller
 	if err := k8s.SetControllerReference(cr, job, r.scheme); err != nil {
 		return nil, errors.Wrap(err, "job/setControllerReference")
@@ -438,7 +449,7 @@ func (r *ReconcilePerconaXtraDBClusterBackup) ensureFinalizers(ctx context.Conte
 	return nil
 }
 
-func (r *ReconcilePerconaXtraDBClusterBackup) tryRunBackupFinalizers(ctx context.Context, cr *api.PerconaXtraDBClusterBackup) error {
+func (r *ReconcilePerconaXtraDBClusterBackup) tryRunBackupFinalizers(ctx context.Context, cr *api.PerconaXtraDBClusterBackup, cluster *api.PerconaXtraDBCluster) error {
 	if cr.ObjectMeta.DeletionTimestamp == nil {
 		return nil
 	}
@@ -451,7 +462,7 @@ func (r *ReconcilePerconaXtraDBClusterBackup) tryRunBackupFinalizers(ctx context
 			return nil
 		}
 
-		go r.runBackupFinalizers(ctx, cr)
+		go r.runBackupFinalizers(ctx, cr, cluster)
 	default:
 		if _, ok := r.bcpDeleteInProgress.Load(cr.Name); !ok {
 			inprog := []string{}
@@ -468,7 +479,7 @@ func (r *ReconcilePerconaXtraDBClusterBackup) tryRunBackupFinalizers(ctx context
 	return nil
 }
 
-func (r *ReconcilePerconaXtraDBClusterBackup) runBackupFinalizers(ctx context.Context, cr *api.PerconaXtraDBClusterBackup) {
+func (r *ReconcilePerconaXtraDBClusterBackup) runBackupFinalizers(ctx context.Context, cr *api.PerconaXtraDBClusterBackup, cluster *api.PerconaXtraDBCluster) {
 	log := logf.FromContext(ctx)
 
 	defer func() {
@@ -490,9 +501,9 @@ func (r *ReconcilePerconaXtraDBClusterBackup) runBackupFinalizers(ctx context.Co
 				if cr.Status.Destination.StorageTypePrefix() != api.AwsBlobStoragePrefix {
 					continue
 				}
-				err = r.runS3BackupFinalizer(ctx, cr)
+				err = r.runS3BackupFinalizer(ctx, cr, cluster)
 			case api.BackupStorageAzure:
-				err = r.runAzureBackupFinalizer(ctx, cr)
+				err = r.runAzureBackupFinalizer(ctx, cr, cluster)
 			case api.BackupStorageFilesystem:
 				err = r.runFilesystemBackupFinalizer(ctx, cr)
 			default:
@@ -525,7 +536,7 @@ func (r *ReconcilePerconaXtraDBClusterBackup) runBackupFinalizers(ctx context.Co
 	}
 }
 
-func (r *ReconcilePerconaXtraDBClusterBackup) runS3BackupFinalizer(ctx context.Context, cr *api.PerconaXtraDBClusterBackup) error {
+func (r *ReconcilePerconaXtraDBClusterBackup) runS3BackupFinalizer(ctx context.Context, cr *api.PerconaXtraDBClusterBackup, cluster *api.PerconaXtraDBCluster) error {
 	log := logf.FromContext(ctx)
 
 	if cr.Status.S3 == nil {
@@ -539,7 +550,7 @@ func (r *ReconcilePerconaXtraDBClusterBackup) runS3BackupFinalizer(ctx context.C
 		return errors.Wrap(err, "failed to get secret")
 	}
 
-	opts, err := storage.GetOptionsFromBackup(ctx, r.client, nil, cr)
+	opts, err := storage.GetOptionsFromBackup(ctx, r.client, cluster, cr)
 	if err != nil {
 		return errors.Wrap(err, "get storage options")
 	}
@@ -557,14 +568,14 @@ func (r *ReconcilePerconaXtraDBClusterBackup) runS3BackupFinalizer(ctx context.C
 	return nil
 }
 
-func (r *ReconcilePerconaXtraDBClusterBackup) runAzureBackupFinalizer(ctx context.Context, cr *api.PerconaXtraDBClusterBackup) error {
+func (r *ReconcilePerconaXtraDBClusterBackup) runAzureBackupFinalizer(ctx context.Context, cr *api.PerconaXtraDBClusterBackup, cluster *api.PerconaXtraDBCluster) error {
 	log := logf.FromContext(ctx)
 
 	if cr.Status.Azure == nil {
 		return errors.New("azure storage is not specified")
 	}
 
-	opts, err := storage.GetOptionsFromBackup(ctx, r.client, nil, cr)
+	opts, err := storage.GetOptionsFromBackup(ctx, r.client, cluster, cr)
 	if err != nil {
 		return errors.Wrap(err, "get storage options")
 	}

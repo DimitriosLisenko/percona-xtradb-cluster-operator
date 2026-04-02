@@ -237,6 +237,10 @@ type BackupSpec struct {
 	// Once this threshold is reached, the backup will be marked as failed. Default is 300 seconds (20m).
 	// +kubebuilder:default:=1200
 	RunningDeadlineSeconds *int64 `json:"runningDeadlineSeconds,omitempty"`
+	// SkipBucketCheck skips the bucket existence check during storage client initialization.
+	// This can be useful when the backup service account doesn't have HeadBucket permissions.
+	// +optional
+	SkipBucketCheck bool `json:"skipBucketCheck,omitempty"`
 }
 
 func (b *BackupSpec) GetAllowParallel() bool {
