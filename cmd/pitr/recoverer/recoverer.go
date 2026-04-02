@@ -51,6 +51,7 @@ type Config struct {
 	StorageType        string `env:"STORAGE_TYPE,required"`
 	BinlogStorageS3    BinlogS3
 	BinlogStorageAzure BinlogAzure
+	SkipBucketCheck    bool `env:"SKIP_BUCKET_CHECK" envDefault:"false"`
 }
 
 func (c Config) storages(ctx context.Context) (storage.Storage, storage.Storage, error) {
@@ -68,7 +69,7 @@ func (c Config) storages(ctx context.Context) (storage.Storage, storage.Storage,
 			return nil, nil, errors.Wrap(err, "read CA bundle file")
 		}
 
-		binlogStorage, err = storage.NewS3(ctx, c.BinlogStorageS3.Endpoint, c.BinlogStorageS3.AccessKeyID, c.BinlogStorageS3.AccessKey, bucket, prefix, c.BinlogStorageS3.Region, c.VerifyTLS, caBundle)
+		binlogStorage, err = storage.NewS3(ctx, c.BinlogStorageS3.Endpoint, c.BinlogStorageS3.AccessKeyID, c.BinlogStorageS3.AccessKey, bucket, prefix, c.BinlogStorageS3.Region, c.VerifyTLS, caBundle, c.SkipBucketCheck)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "new s3 storage")
 		}
@@ -78,7 +79,7 @@ func (c Config) storages(ctx context.Context) (storage.Storage, storage.Storage,
 			return nil, nil, errors.Wrap(err, "get bucket and prefix")
 		}
 		prefix = prefix[:len(prefix)-1]
-		defaultStorage, err = storage.NewS3(ctx, c.BackupStorageS3.Endpoint, c.BackupStorageS3.AccessKeyID, c.BackupStorageS3.AccessKey, bucket, prefix+".sst_info/", c.BackupStorageS3.Region, c.VerifyTLS, caBundle)
+		defaultStorage, err = storage.NewS3(ctx, c.BackupStorageS3.Endpoint, c.BackupStorageS3.AccessKeyID, c.BackupStorageS3.AccessKey, bucket, prefix+".sst_info/", c.BackupStorageS3.Region, c.VerifyTLS, caBundle, c.SkipBucketCheck)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "new storage manager")
 		}

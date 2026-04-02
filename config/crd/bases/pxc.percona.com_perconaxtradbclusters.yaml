@@ -163,6 +163,8 @@ spec:
                     type: array
                   serviceAccountName:
                     type: string
+                  skipBucketCheck:
+                    type: boolean
                   startingDeadlineSeconds:
                     format: int64
                     type: integer
