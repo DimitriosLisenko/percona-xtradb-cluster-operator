@@ -290,7 +290,7 @@ func RestoreJob(
 		}
 
 		if pitr {
-			if cluster.Spec.Backup == nil && len(cluster.Spec.Backup.Storages) == 0 {
+			if cluster.Spec.Backup == nil || len(cluster.Spec.Backup.Storages) == 0 {
 				return nil, errors.New("no storage section")
 			}
 			volumeMounts = []corev1.VolumeMount{}
