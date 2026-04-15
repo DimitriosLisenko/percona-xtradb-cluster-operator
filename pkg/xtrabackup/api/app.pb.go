@@ -379,6 +379,7 @@ type BackupConfig struct {
 	S3               *S3Config              `protobuf:"bytes,5,opt,name=s3,proto3,oneof" json:"s3,omitempty"`
 	Gcs              *GCSConfig             `protobuf:"bytes,6,opt,name=gcs,proto3,oneof" json:"gcs,omitempty"`
 	Azure            *AzureConfig           `protobuf:"bytes,7,opt,name=azure,proto3,oneof" json:"azure,omitempty"`
+	SkipBucketCheck  bool                   `protobuf:"varint,8,opt,name=skip_bucket_check,json=skipBucketCheck,proto3" json:"skip_bucket_check,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -460,6 +461,13 @@ func (x *BackupConfig) GetAzure() *AzureConfig {
 		return x.Azure
 	}
 	return nil
+}
+
+func (x *BackupConfig) GetSkipBucketCheck() bool {
+	if x != nil {
+		return x.SkipBucketCheck
+	}
+	return false
 }
 
 type S3Config struct {
@@ -898,7 +906,7 @@ const file_app_proto_rawDesc = "" +
 	"\vbackup_name\x18\x01 \x01(\tR\n" +
 	"backupName\x126\n" +
 	"\rbackup_config\x18\x02 \x01(\v2\x11.api.BackupConfigR\fbackupConfig\"\x16\n" +
-	"\x14DeleteBackupResponse\"\xd0\x02\n" +
+	"\x14DeleteBackupResponse\"\xfc\x02\n" +
 	"\fBackupConfig\x12 \n" +
 	"\vdestination\x18\x01 \x01(\tR\vdestination\x12*\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x16.api.BackupStorageTypeR\x04type\x12\x1d\n" +
@@ -907,7 +915,8 @@ const file_app_proto_rawDesc = "" +
 	"\x11container_options\x18\x04 \x01(\v2\x15.api.ContainerOptionsR\x10containerOptions\x12\"\n" +
 	"\x02s3\x18\x05 \x01(\v2\r.api.S3ConfigH\x00R\x02s3\x88\x01\x01\x12%\n" +
 	"\x03gcs\x18\x06 \x01(\v2\x0e.api.GCSConfigH\x01R\x03gcs\x88\x01\x01\x12+\n" +
-	"\x05azure\x18\a \x01(\v2\x10.api.AzureConfigH\x02R\x05azure\x88\x01\x01B\x05\n" +
+	"\x05azure\x18\a \x01(\v2\x10.api.AzureConfigH\x02R\x05azure\x88\x01\x01\x12*\n" +
+	"\x11skip_bucket_check\x18\b \x01(\bR\x0fskipBucketCheckB\x05\n" +
 	"\x03_s3B\x06\n" +
 	"\x04_gcsB\b\n" +
 	"\x06_azure\"\x8f\x02\n" +

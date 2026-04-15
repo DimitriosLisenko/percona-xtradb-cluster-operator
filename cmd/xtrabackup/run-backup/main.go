@@ -102,6 +102,7 @@ func getRequestObject() *xbscapi.CreateBackupRequest {
 	req.BackupName = os.Getenv("BACKUP_NAME")
 	req.BackupConfig.Destination = os.Getenv("BACKUP_DEST")
 	req.BackupConfig.VerifyTls = os.Getenv("VERIFY_TLS") == "true"
+	req.BackupConfig.SkipBucketCheck = os.Getenv("SKIP_BUCKET_CHECK") == "true"
 	req.BackupConfig.ContainerOptions = containerOptions
 
 	storageType := os.Getenv("STORAGE_TYPE")
