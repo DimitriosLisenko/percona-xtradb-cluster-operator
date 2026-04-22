@@ -153,7 +153,7 @@ func ensureSSLReconciled(t *testing.T, r *ReconcilePerconaXtraDBCluster, cr *api
 	err = r.client.Get(t.Context(), client.ObjectKeyFromObject(sfs), currentSfs)
 	require.NoError(t, err)
 
-	annots := sfs.Spec.Template.Annotations
+	annots := currentSfs.Spec.Template.Annotations
 	if annots == nil {
 		annots = make(map[string]string)
 	}
