@@ -12,11 +12,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	api "github.com/percona/percona-xtradb-cluster-operator/pkg/apis/pxc/v1"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/k8s"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/naming"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/statefulset"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/queries"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/users"
@@ -120,12 +123,12 @@ func (r *ReconcilePerconaXtraDBCluster) reconcileReplication(ctx context.Context
 	// connect to failed/pending pods
 	podList := make([]corev1.Pod, 0)
 	for _, pod := range listRaw.Items {
-		if isPodReady(pod) {
+		if k8s.IsPodReady(pod) {
 			podList = append(podList, pod)
 		}
 	}
 
-	primary, err := r.getPrimaryPod(ctx, cr)
+	primary, err := pxc.GetPrimaryPod(ctx, r.client, cr)
 	if err != nil {
 		return errors.Wrap(err, "get primary pxc pod")
 	}
@@ -230,6 +233,10 @@ func (r *ReconcilePerconaXtraDBCluster) reconcileReplication(ctx context.Context
 		if err != nil {
 			return errors.Wrap(err, "failed to change replication password")
 		}
+	}
+
+	if cr.Status.PXC.Version == "" {
+		return errors.New("PXC version is not known, will retry")
 	}
 
 	authPluginVar := "default_authentication_plugin"
@@ -532,20 +539,22 @@ func NewExposedPXCService(svcName string, cr *api.PerconaXtraDBCluster) *corev1.
 
 	if cr.Spec.PXC.Expose.Type == corev1.ServiceTypeNodePort ||
 		cr.Spec.PXC.Expose.Type == corev1.ServiceTypeLoadBalancer {
-		if cr.CompareVersionWith("1.14.0") >= 0 {
-			switch cr.Spec.PXC.Expose.ExternalTrafficPolicy {
-			case corev1.ServiceExternalTrafficPolicyTypeLocal, corev1.ServiceExternalTrafficPolicyTypeCluster:
-				svc.Spec.ExternalTrafficPolicy = cr.Spec.PXC.Expose.ExternalTrafficPolicy
-			default:
-				svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeCluster
-			}
-		} else {
-			switch cr.Spec.PXC.Expose.TrafficPolicy {
-			case corev1.ServiceExternalTrafficPolicyTypeLocal, corev1.ServiceExternalTrafficPolicyTypeCluster:
-				svc.Spec.ExternalTrafficPolicy = cr.Spec.PXC.Expose.TrafficPolicy
-			default:
-				svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeCluster
-			}
+		switch cr.Spec.PXC.Expose.ExternalTrafficPolicy {
+		case corev1.ServiceExternalTrafficPolicyTypeLocal, corev1.ServiceExternalTrafficPolicyTypeCluster:
+			svc.Spec.ExternalTrafficPolicy = cr.Spec.PXC.Expose.ExternalTrafficPolicy
+		default:
+			svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeCluster
+		}
+	}
+
+	if cr.Spec.PXC.Expose.Type == corev1.ServiceTypeNodePort ||
+		cr.Spec.PXC.Expose.Type == corev1.ServiceTypeLoadBalancer ||
+		cr.Spec.PXC.Expose.Type == corev1.ServiceTypeClusterIP {
+		switch cr.Spec.PXC.Expose.InternalTrafficPolicy {
+		case corev1.ServiceInternalTrafficPolicyCluster, corev1.ServiceInternalTrafficPolicyLocal:
+			svc.Spec.InternalTrafficPolicy = &cr.Spec.PXC.Expose.InternalTrafficPolicy
+		default:
+			svc.Spec.InternalTrafficPolicy = ptr.To(corev1.ServiceInternalTrafficPolicyCluster)
 		}
 	}
 
@@ -566,19 +575,6 @@ func NewExposedPXCService(svcName string, cr *api.PerconaXtraDBCluster) *corev1.
 	}
 
 	return svc
-}
-
-// isPodReady returns a boolean reflecting if a pod is in a "ready" state
-func isPodReady(pod corev1.Pod) bool {
-	for _, condition := range pod.Status.Conditions {
-		if condition.Status != corev1.ConditionTrue {
-			continue
-		}
-		if condition.Type == corev1.PodReady {
-			return true
-		}
-	}
-	return false
 }
 
 func currentReplicaConfig(name string, status *api.ReplicationStatus) api.ReplicationChannelConfig {

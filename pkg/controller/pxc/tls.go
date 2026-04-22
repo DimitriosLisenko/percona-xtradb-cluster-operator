@@ -290,7 +290,7 @@ func (r *ReconcilePerconaXtraDBCluster) createSSLManualy(ctx context.Context, cr
 	if cr.Spec.TLS != nil && len(cr.Spec.TLS.SANs) > 0 {
 		proxyHosts = append(proxyHosts, cr.Spec.TLS.SANs...)
 	}
-	caCert, tlsCert, key, err := pxctls.Issue(proxyHosts, cr.CompareVersionWith("1.19.0") >= 0)
+	caCert, tlsCert, key, err := pxctls.Issue(proxyHosts, cr.CompareVersionWith("1.19.0") >= 0, cr.CompareVersionWith("1.20.0") >= 0)
 	if err != nil {
 		return fmt.Errorf("create proxy certificate: %v", err)
 	}
@@ -328,7 +328,7 @@ func (r *ReconcilePerconaXtraDBCluster) createSSLManualy(ctx context.Context, cr
 	if cr.Spec.TLS != nil && len(cr.Spec.TLS.SANs) > 0 {
 		pxcHosts = append(pxcHosts, cr.Spec.TLS.SANs...)
 	}
-	caCert, tlsCert, key, err = pxctls.Issue(pxcHosts, cr.CompareVersionWith("1.19.0") >= 0)
+	caCert, tlsCert, key, err = pxctls.Issue(pxcHosts, cr.CompareVersionWith("1.19.0") >= 0, cr.CompareVersionWith("1.20.0") >= 0)
 	if err != nil {
 		return fmt.Errorf("create pxc certificate: %v", err)
 	}

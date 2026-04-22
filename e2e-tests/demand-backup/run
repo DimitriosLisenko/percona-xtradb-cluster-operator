@@ -8,52 +8,52 @@ test_dir=$(realpath $(dirname $0))
 set_debug
 
 check_finalizer_for_fs() {
-  local backup_name="$1"
-  local finalizer_flag="off"
+	local backup_name="$1"
+	local finalizer_flag="off"
 
-  desc "Checking finalizers on backup $backup_name"
-  # Check if pxc-backup has the finalizer "percona.com/delete-backup"
-  if kubectl get pxc-backup "$backup_name" -o jsonpath='{.metadata.finalizers}' | grep -q "percona.com/delete-backup"; then
-    finalizer_flag="on"
-  fi
+	desc "Checking finalizers on backup $backup_name"
+	# Check if pxc-backup has the finalizer "percona.com/delete-backup"
+	if kubectl get pxc-backup "$backup_name" -o jsonpath='{.metadata.finalizers}' | grep -q "percona.com/delete-backup"; then
+		finalizer_flag="on"
+	fi
 
-  echo "Finalizer is $finalizer_flag"
+	echo "Finalizer is $finalizer_flag"
 
-  echo "Looking for PVCs containing '$backup_name'"
-  pvc=$(kubectl get pvc --no-headers -o custom-columns=":metadata.name" | grep "$backup_name")
+	echo "Looking for PVCs containing '$backup_name'"
+	pvc=$(kubectl get pvc --no-headers -o custom-columns=":metadata.name" | grep "$backup_name")
 
-  if [[ -z "$pvc" ]]; then
-    echo "No PVCs found with substring '$backup_name' before the backup deletion. Something wrong with backup"
-    return 1
-  fi
+	if [[ -z $pvc ]]; then
+		echo "No PVCs found with substring '$backup_name' before the backup deletion. Something wrong with backup"
+		return 1
+	fi
 
-  echo "Deleting backup $backup_name ..."
-  kubectl delete pxc-backup "$backup_name"
+	echo "Deleting backup $backup_name ..."
+	kubectl delete pxc-backup "$backup_name"
 
-  sleep 5
+	sleep 5
 
-  pvc=$(kubectl get pvc --no-headers -o custom-columns=":metadata.name" | grep "$backup_name" || true)
+	pvc=$(kubectl get pvc --no-headers -o custom-columns=":metadata.name" | grep "$backup_name" || true)
 
-  echo "Checking PVC $pvc existence and finalizers"
+	echo "Checking PVC $pvc existence and finalizers"
 
-  if [[ -z "$pvc" && "$finalizer_flag" == "off" ]]; then
-      echo "Error: No PVCs found with substring '$backup_name'. PVC was deleted even though finalizer is OFF."
-      exit 1
+	if [[ -z $pvc && $finalizer_flag == "off" ]]; then
+		echo "Error: No PVCs found with substring '$backup_name'. PVC was deleted even though finalizer is OFF."
+		exit 1
 
-  elif [[ -z "$pvc" && "$finalizer_flag" == "on" ]]; then
-      echo "Correct: No PVCs found with substring '$backup_name' because finalizer is ON and PVC was deleted."
+	elif [[ -z $pvc && $finalizer_flag == "on" ]]; then
+		echo "Correct: No PVCs found with substring '$backup_name' because finalizer is ON and PVC was deleted."
 
-  elif [[ -n "$pvc" && "$finalizer_flag" == "on" ]]; then
-      echo "Error: PVC exists: $pvc (finalizer_flag=$finalizer_flag). Finalizer should delete PVC but did NOT."
-      exit 1
+	elif [[ -n $pvc && $finalizer_flag == "on" ]]; then
+		echo "Error: PVC exists: $pvc (finalizer_flag=$finalizer_flag). Finalizer should delete PVC but did NOT."
+		exit 1
 
-  else
-      echo "PVC exists: $pvc (finalizer_flag=$finalizer_flag)"
-  fi
+	else
+		echo "PVC exists: $pvc (finalizer_flag=$finalizer_flag)"
+	fi
 
 }
 
-check_restore_logs() {
+check_logs() {
 	local restore=$1
 	local search=$2
 
@@ -118,8 +118,8 @@ main() {
 	fi
 
 	backup_job_name=$(kubectl get pod -l "percona.com/backup-job-name=xb-on-demand-backup-minio" -o jsonpath='{.items[].metadata.name}')
-	kubectl logs "$backup_job_name" | grep -E "xbcloud put --storage=s3 --parallel=[0-9]+ --md5 --insecure (--curl-retriable-errors=7 )?--parallel=2 --curl-retriable-errors=8"
-	kubectl logs "$backup_job_name" | grep "xbstream -x -C /tmp --parallel=2"
+	check_logs "$backup_job_name" "xbcloud put --storage=s3 --md5 --parallel=[0-9]+ --insecure (--curl-retriable-errors=7 )?--parallel=2 --curl-retriable-errors=8"
+	check_logs "$backup_job_name" "xbstream -x -C /tmp --parallel=2"
 
 	new_pass=$(echo -n "newpass" | base64)
 	kubectl_bin patch secret my-cluster-secrets -p="{\"data\":{\"xtrabackup\": \"${new_pass}\", \"monitor\": \"${new_pass}\"}}"
@@ -131,11 +131,11 @@ main() {
 	compare_kubectl job/restore-job-on-demand-backup-minio-demand-backup
 	restore_job_name=$(kubectl get pod -l "percona.com/restore-job-name=restore-job-on-demand-backup-minio-demand-backup" -o jsonpath='{.items[].metadata.name}')
 	
-	check_restore_logs ${restore_job_name} "xtrabackup  --defaults-group=mysqld --datadir=/datadir --move-back"
-	check_restore_logs ${restore_job_name} "xtrabackup  --use-memory=1500000000 --prepare"
-	check_restore_logs ${restore_job_name} "xbcloud get --parallel=[0-9]+ --insecure (--curl-retriable-errors=7 )?--parallel=3"
-	check_restore_logs ${restore_job_name} "xbstream -x -C .* --parallel=[0-9]+ --parallel=3"
-	check_restore_logs ${restore_job_name} "(xbstream --decompress -x -C .* --parallel=[0-9]+ --parallel=3|xbstream -x -C .* --parallel=[0-9]+ --parallel=3)"
+	check_logs ${restore_job_name} "xtrabackup  --defaults-group=mysqld --datadir=/datadir --move-back"
+	check_logs ${restore_job_name} "xtrabackup  --use-memory=1500000000 --prepare"
+	check_logs ${restore_job_name} "xbcloud get --parallel=[0-9]+ --insecure (--curl-retriable-errors=7 )?--parallel=3"
+	check_logs ${restore_job_name} "xbstream -x -C .* --parallel=[0-9]+ --parallel=3"
+	check_logs ${restore_job_name} "(xbstream --decompress -x -C .* --parallel=[0-9]+ --parallel=3|xbstream -x -C .* --parallel=[0-9]+ --parallel=3)"
 
 	desc "Check backup deletion"
 	kubectl_bin delete pxc-backup --all

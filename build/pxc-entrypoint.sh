@@ -160,6 +160,14 @@ escape_special() {
 MYSQL_VERSION=$(mysqld -V | awk '{print $3}' | awk -F'.' '{print $1"."$2}')
 MYSQL_PATCH_VERSION=$(mysqld -V | awk '{print $3}' | awk -F'.' '{print $3}' | awk -F'-' '{print $1}')
 
+vault_secret="/etc/mysql/vault-keyring-secret/keyring_vault.conf"
+if [ -f "$vault_secret" ]; then
+	if [[ $MYSQL_VERSION =~ ^(5\.7|8\.0)$ ]]; then
+		sed -i "/\[mysqld\]/a early-plugin-load=keyring_vault.so" $CFG
+		sed -i "/\[mysqld\]/a keyring_vault_config=$vault_secret" $CFG
+	fi
+fi
+
 if [ "$MYSQL_VERSION" == '8.0' ]; then
 	sed -i '/\[mysqld\]/a plugin_load="binlog_utils_udf=binlog_utils_udf.so"' $CFG
 fi
@@ -168,6 +176,10 @@ if [[ $MYSQL_VERSION =~ ^(8\.0|8\.4)$ ]]; then
 	sed -i "/\[mysqld\]/a gtid-mode=ON" $CFG
 	sed -i "/\[mysqld\]/a enforce-gtid-consistency" $CFG
 	sed -i "/\[mysqld\]/a innodb_buffer_pool_in_core_file=OFF" $CFG
+fi
+
+if [ "$MYSQL_VERSION" == '8.4' ]; then
+	sed -i '/\[mysqld\]/a innodb_numa_interleave=OFF' $CFG
 fi
 
 sed -i "/\[mysqld\]/a wsrep_notify_cmd=/var/lib/mysql/wsrep_cmd_notify_handler.sh" $CFG
@@ -452,6 +464,21 @@ if [ -z "$CLUSTER_JOIN" ] && [ "$1" = 'mysqld' ] && [ -z "$wantHelp" ]; then
 		fi
 		set -x
 
+		if [[ $MYSQL_VERSION == "8.0" ]]; then
+			"${mysql[@]}" <<-EOSQL
+				CREATE FUNCTION IF NOT EXISTS get_last_record_timestamp_by_binlog RETURNS INTEGER SONAME 'binlog_utils_udf.so';
+				CREATE FUNCTION IF NOT EXISTS get_gtid_set_by_binlog RETURNS STRING SONAME 'binlog_utils_udf.so';
+				CREATE FUNCTION IF NOT EXISTS get_first_record_timestamp_by_binlog RETURNS INTEGER SONAME 'binlog_utils_udf.so';
+			EOSQL
+		fi
+
+		if [[ $MYSQL_VERSION == "8.4" ]]; then
+			echo "Installing file://component_binlog_utils_udf"
+			"${mysql[@]}" <<-EOSQL
+				INSTALL COMPONENT 'file://component_binlog_utils_udf';
+			EOSQL
+		fi
+
 		echo
 		ls /docker-entrypoint-initdb.d/ >/dev/null
 		for f in /docker-entrypoint-initdb.d/*; do
@@ -483,15 +510,9 @@ if [ -z "$CLUSTER_JOIN" ] && [ "$1" = 'mysqld' ] && [ -z "$wantHelp" ]; then
 fi
 
 # if vault secret file exists we assume we need to turn on encryption
-vault_secret="/etc/mysql/vault-keyring-secret/keyring_vault.conf"
 if [ -f "$vault_secret" ]; then
-	if [[ $MYSQL_VERSION == '8.0' ]]; then
-		sed -i "/\[mysqld\]/a early-plugin-load=keyring_vault.so" $CFG
-		sed -i "/\[mysqld\]/a keyring_vault_config=$vault_secret" $CFG
-	fi
-
 	if [[ $MYSQL_VERSION == '8.4' ]]; then
-		echo -n '{ "components": "file://component_keyring_vault" }' > /var/lib/mysql/mysqld.my
+		echo -n '{ "components": "file://component_keyring_vault" }' >/var/lib/mysql/mysqld.my
 		cp ${vault_secret} /var/lib/mysql/component_keyring_vault.cnf
 	fi
 

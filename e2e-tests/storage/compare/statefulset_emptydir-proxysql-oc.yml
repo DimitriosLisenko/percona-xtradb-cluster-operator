@@ -60,6 +60,22 @@ spec:
                 secretKeyRef:
                   key: monitor
                   name: internal-emptydir
+            - name: SCHEDULER_CHECKTIMEOUT
+              value: "0"
+            - name: SCHEDULER_WRITERALSOREADER
+              value: "0"
+            - name: SCHEDULER_RETRYUP
+              value: "0"
+            - name: SCHEDULER_RETRYDOWN
+              value: "0"
+            - name: SCHEDULER_PINGTIMEOUT
+              value: "0"
+            - name: SCHEDULER_NODECHECKINTERVAL
+              value: "0"
+            - name: SCHEDULER_MAXCONNECTIONS
+              value: "0"
+            - name: PERCONA_SCHEDULER_CFG
+              value: /tmp/scheduler-config.toml
           envFrom:
             - secretRef:
                 name: emptydir-env-vars-proxysql
@@ -95,6 +111,8 @@ spec:
             - -on-change=/opt/percona/proxysql_add_pxc_nodes.sh
             - -service=$(PXC_SERVICE)
             - -protocol=$(PEER_LIST_SRV_PROTOCOL)
+          command:
+            - /opt/percona/proxysql-entrypoint.sh
           env:
             - name: PXC_SERVICE
               value: emptydir-pxc
@@ -115,6 +133,22 @@ spec:
                 secretKeyRef:
                   key: monitor
                   name: internal-emptydir
+            - name: SCHEDULER_CHECKTIMEOUT
+              value: "0"
+            - name: SCHEDULER_WRITERALSOREADER
+              value: "0"
+            - name: SCHEDULER_RETRYUP
+              value: "0"
+            - name: SCHEDULER_RETRYDOWN
+              value: "0"
+            - name: SCHEDULER_PINGTIMEOUT
+              value: "0"
+            - name: SCHEDULER_NODECHECKINTERVAL
+              value: "0"
+            - name: SCHEDULER_MAXCONNECTIONS
+              value: "0"
+            - name: PERCONA_SCHEDULER_CFG
+              value: /tmp/scheduler-config.toml
           envFrom:
             - secretRef:
                 name: emptydir-env-vars-proxysql
@@ -132,6 +166,8 @@ spec:
             - -on-change=/opt/percona/proxysql_add_proxysql_nodes.sh
             - -service=$(PROXYSQL_SERVICE)
             - -protocol=$(PEER_LIST_SRV_PROTOCOL)
+          command:
+            - /opt/percona/proxysql-entrypoint.sh
           env:
             - name: PROXYSQL_SERVICE
               value: emptydir-proxysql-unready

@@ -74,6 +74,10 @@ spec:
               value: "0"
             - name: SCHEDULER_MAXCONNECTIONS
               value: "0"
+            - name: PERCONA_SCHEDULER_CFG
+              value: /tmp/scheduler-config.toml
+            - name: PXC_READ_ONLY
+              value: "false"
           envFrom:
             - secretRef:
                 name: no-requests-env-vars-proxysql
@@ -110,6 +114,8 @@ spec:
             - -on-change=/opt/percona/proxysql_add_pxc_nodes.sh
             - -service=$(PXC_SERVICE)
             - -protocol=$(PEER_LIST_SRV_PROTOCOL)
+          command:
+            - /opt/percona/proxysql-entrypoint.sh
           env:
             - name: PXC_SERVICE
               value: no-requests-pxc
@@ -130,6 +136,24 @@ spec:
                 secretKeyRef:
                   key: monitor
                   name: internal-no-requests
+            - name: SCHEDULER_CHECKTIMEOUT
+              value: "0"
+            - name: SCHEDULER_WRITERALSOREADER
+              value: "0"
+            - name: SCHEDULER_RETRYUP
+              value: "0"
+            - name: SCHEDULER_RETRYDOWN
+              value: "0"
+            - name: SCHEDULER_PINGTIMEOUT
+              value: "0"
+            - name: SCHEDULER_NODECHECKINTERVAL
+              value: "0"
+            - name: SCHEDULER_MAXCONNECTIONS
+              value: "0"
+            - name: PERCONA_SCHEDULER_CFG
+              value: /tmp/scheduler-config.toml
+            - name: PXC_READ_ONLY
+              value: "false"
           envFrom:
             - secretRef:
                 name: no-requests-env-vars-proxysql
@@ -151,6 +175,8 @@ spec:
             - -on-change=/opt/percona/proxysql_add_proxysql_nodes.sh
             - -service=$(PROXYSQL_SERVICE)
             - -protocol=$(PEER_LIST_SRV_PROTOCOL)
+          command:
+            - /opt/percona/proxysql-entrypoint.sh
           env:
             - name: PROXYSQL_SERVICE
               value: no-requests-proxysql-unready

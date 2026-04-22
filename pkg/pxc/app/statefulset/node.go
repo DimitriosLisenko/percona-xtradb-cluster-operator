@@ -4,25 +4,32 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	api "github.com/percona/percona-xtradb-cluster-operator/pkg/apis/pxc/v1"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/features"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/naming"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/config"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/users"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/xtrabackup/server"
 )
 
 const (
 	VaultSecretVolumeName = "vault-keyring-secret"
+	VaultSecretMountPath  = "/etc/mysql/vault-keyring-secret"
+	VaultKeyringConfig    = "keyring_vault.conf"
 )
 
 type Node struct {
@@ -143,7 +150,7 @@ func (c *Node) AppContainer(ctx context.Context, cl client.Client, spec *api.Pod
 			},
 			{
 				Name:      VaultSecretVolumeName,
-				MountPath: "/etc/mysql/vault-keyring-secret",
+				MountPath: VaultSecretMountPath,
 			},
 		},
 		Env: []corev1.EnvVar{
@@ -278,6 +285,45 @@ func (c *Node) AppContainer(ctx context.Context, cl client.Client, spec *api.Pod
 	return appc, nil
 }
 
+func jemallocPathForPXCImage(pxcImage string) string {
+	const (
+		libJemallocSo1 = "/usr/lib64/libjemalloc.so.1"
+		libJemallocSo2 = "/usr/lib64/libjemalloc.so.2"
+	)
+	if pxcImage == "" {
+		return libJemallocSo2
+	}
+	idx := strings.LastIndex(pxcImage, ":")
+	if idx < 0 || idx == len(pxcImage)-1 {
+		return libJemallocSo2
+	}
+	tag := strings.ToLower(pxcImage[idx+1:])
+
+	// Operator-style tags: main-pxc8.0, main-pxc8.4
+	if strings.Contains(tag, "pxc8.0") {
+		return libJemallocSo1
+	}
+	if strings.Contains(tag, "pxc8.4") || strings.Contains(tag, "pxc9") {
+		return libJemallocSo2
+	}
+
+	// Semantic version in tag (e.g. 8.0.35, 8.4.32, 8.4.32-31)
+	parts := strings.SplitN(tag, ".", 3)
+	if len(parts) < 2 {
+		return libJemallocSo2
+	}
+	major, errMajor := strconv.Atoi(parts[0])
+	minor, errMinor := strconv.Atoi(parts[1])
+	if errMajor != nil || errMinor != nil {
+		return libJemallocSo2
+	}
+	// Only 8.0.x uses .so.1; everything else (8.4+, 9.x, unknown) uses .so.2
+	if major == 8 && minor == 0 {
+		return libJemallocSo1
+	}
+	return libJemallocSo2
+}
+
 func setLDPreloadEnv(
 	ctx context.Context,
 	cl client.Client,
@@ -286,7 +332,6 @@ func setLDPreloadEnv(
 ) {
 	const (
 		ldPreloadKey    = "LD_PRELOAD"
-		libJemallocPath = "/usr/lib64/libjemalloc.so.1"
 		libTcmallocPath = "/usr/lib64/libtcmalloc.so"
 	)
 
@@ -295,7 +340,7 @@ func setLDPreloadEnv(
 	// Determine the allocator
 	switch strings.ToLower(cr.Spec.PXC.MySQLAllocator) {
 	case "jemalloc":
-		ldPreloadValue += ":" + libJemallocPath
+		ldPreloadValue += ":" + jemallocPathForPXCImage(cr.Spec.PXC.Image)
 	case "tcmalloc":
 		ldPreloadValue += ":" + libTcmallocPath
 	}
@@ -429,6 +474,77 @@ func (c *Node) LogCollectorContainer(spec *api.LogCollectorSpec, logPsecrets str
 	}
 
 	return []corev1.Container{logProcContainer, logRotContainer}, nil
+}
+
+func (c *Node) XtrabackupContainer(ctx context.Context, cr *api.PerconaXtraDBCluster) (*corev1.Container, error) {
+	if !features.Enabled(ctx, features.XtrabackupSidecar) {
+		return nil, nil
+	}
+	if cr.Spec.Backup == nil {
+		return nil, nil
+	}
+	container := &corev1.Container{
+		Name:            "xtrabackup",
+		Image:           cr.Spec.Backup.Image,
+		ImagePullPolicy: cr.Spec.Backup.ImagePullPolicy,
+		Env: []corev1.EnvVar{
+			{
+				Name: "POD_NAMESPACE",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.namespace",
+					},
+				},
+			},
+			{
+				Name: "XTRABACKUP_USER_PASS",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: app.SecretKeySelector(cr.Spec.SecretsName, users.Xtrabackup),
+				},
+			},
+			{
+				Name:  "VAULT_KEYRING_PATH",
+				Value: filepath.Join(VaultSecretMountPath, VaultKeyringConfig),
+			},
+		},
+		Command: []string{"/var/lib/mysql/xtrabackup-server-sidecar"},
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "grpc",
+				ContainerPort: server.DefaultPort,
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      app.DataVolumeName,
+				MountPath: "/var/lib/mysql",
+			},
+			{
+				Name:      "backup-logs",
+				MountPath: app.BackupLogDir,
+			},
+			{
+				Name:      "tmp",
+				MountPath: "/tmp",
+			},
+			{
+				Name:      "vault-keyring-secret",
+				MountPath: VaultSecretMountPath,
+			},
+		},
+		// TODO: make this configurable from CR
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("512Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("512Mi"),
+			},
+		},
+	}
+	return container, nil
 }
 
 func (c *Node) PMMContainer(ctx context.Context, cl client.Client, spec *api.PMMSpec, secret *corev1.Secret, cr *api.PerconaXtraDBCluster) (*corev1.Container, error) {

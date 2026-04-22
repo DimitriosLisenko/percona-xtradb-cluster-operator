@@ -3,13 +3,16 @@ allocator
 backup-storage-tls
 big-data
 cross-site
+cross-site-proxysql
 custom-users
 default-cr
 demand-backup
 demand-backup-flow-control
 demand-backup-parallel
 demand-backup-cloud
+demand-backup-cloud-pxb
 demand-backup-encrypted-with-tls
+demand-backup-encrypted-with-tls-pxb
 demand-backup-without-passwords
 extra-pvc
 haproxy
@@ -20,6 +23,7 @@ monitoring-pmm3
 one-pod
 operator-self-healing-chaos
 pitr
+pitr-pxb
 pitr-gap-errors
 proxy-protocol
 proxy-switch
@@ -28,6 +32,7 @@ proxysql-scheduler
 pvc-resize
 recreate
 restore-to-encrypted-cluster
+restore-to-encrypted-cluster-pxb
 scaling
 scaling-proxysql
 scheduled-backup
@@ -36,6 +41,7 @@ self-healing-advanced-chaos
 self-healing-chaos
 smart-update1
 smart-update2
+smart-update3
 storage
 tls-issue-cert-manager
 tls-issue-cert-manager-ref
@@ -44,4 +50,5 @@ upgrade-consistency
 upgrade-haproxy
 upgrade-proxysql
 users
+users-scheduler
 validation-hook

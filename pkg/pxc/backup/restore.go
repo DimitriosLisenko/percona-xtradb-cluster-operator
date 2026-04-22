@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"path"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	api "github.com/percona/percona-xtradb-cluster-operator/pkg/apis/pxc/v1"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/features"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/naming"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app"
@@ -115,8 +117,8 @@ func PVCRestorePod(cr *api.PerconaXtraDBClusterRestore, bcpStorageName, pvcName 
 			MountPath: "/etc/mysql/ssl-internal",
 		},
 		{
-			Name:      "vault-keyring-secret",
-			MountPath: "/etc/mysql/vault-keyring-secret",
+			Name:      statefulset.VaultSecretVolumeName,
+			MountPath: statefulset.VaultSecretMountPath,
 		},
 	}
 
@@ -210,7 +212,15 @@ func appendCABundleSecretVolume(
 	*volumeMounts = append(*volumeMounts, mnt)
 }
 
-func RestoreJob(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBackup, cluster *api.PerconaXtraDBCluster, initImage string, scheme *runtime.Scheme, destination api.PXCBackupDestination, pitr bool) (*batchv1.Job, error) {
+func RestoreJob(
+	ctx context.Context,
+	cr *api.PerconaXtraDBClusterRestore,
+	bcp *api.PerconaXtraDBClusterBackup,
+	cluster *api.PerconaXtraDBCluster,
+	initImage string,
+	scheme *runtime.Scheme,
+	destination api.PXCBackupDestination, pitr bool,
+) (*batchv1.Job, error) {
 	switch bcp.Status.GetStorageType(cluster) {
 	case api.BackupStorageAzure:
 		if bcp.Status.Azure == nil {
@@ -231,8 +241,8 @@ func RestoreJob(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClust
 			MountPath: "/datadir",
 		},
 		{
-			Name:      "vault-keyring-secret",
-			MountPath: "/etc/mysql/vault-keyring-secret",
+			Name:      statefulset.VaultSecretVolumeName,
+			MountPath: statefulset.VaultSecretMountPath,
 		},
 	}
 	volumes := []corev1.Volume{
@@ -321,7 +331,7 @@ func RestoreJob(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClust
 		}
 	}
 
-	envs, err := restoreJobEnvs(bcp, cr, cluster, destination, pitr)
+	envs, err := restoreJobEnvs(ctx, bcp, cr, cluster, destination, pitr)
 	if err != nil {
 		return nil, errors.Wrap(err, "restore job envs")
 	}
@@ -401,7 +411,14 @@ func RestoreJob(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClust
 	return job, nil
 }
 
-func restoreJobEnvs(bcp *api.PerconaXtraDBClusterBackup, cr *api.PerconaXtraDBClusterRestore, cluster *api.PerconaXtraDBCluster, destination api.PXCBackupDestination, pitr bool) ([]corev1.EnvVar, error) {
+func restoreJobEnvs(
+	ctx context.Context,
+	bcp *api.PerconaXtraDBClusterBackup,
+	cr *api.PerconaXtraDBClusterRestore,
+	cluster *api.PerconaXtraDBCluster,
+	destination api.PXCBackupDestination,
+	pitr bool,
+) ([]corev1.EnvVar, error) {
 	if bcp.Status.GetStorageType(cluster) == api.BackupStorageFilesystem {
 		return util.MergeEnvLists(
 			[]corev1.EnvVar{
@@ -480,6 +497,13 @@ func restoreJobEnvs(bcp *api.PerconaXtraDBClusterBackup, cr *api.PerconaXtraDBCl
 		Name:  "VERIFY_TLS",
 		Value: strconv.FormatBool(verifyTLS),
 	})
+
+	if features.Enabled(ctx, features.XtrabackupSidecar) {
+		envs = append(envs, corev1.EnvVar{
+			Name:  "XTRABACKUP_ENABLED",
+			Value: "true",
+		})
+	}
 
 	switch bcp.Status.GetStorageType(cluster) {
 	case api.BackupStorageAzure:
@@ -591,6 +615,10 @@ func azureEnvs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBCluste
 }
 
 func s3Envs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBackup, cluster *api.PerconaXtraDBCluster, destination api.PXCBackupDestination, pitr bool) ([]corev1.EnvVar, error) {
+	endpoint, err := bcp.Status.S3.Endpoint()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get endpoint")
+	}
 	envs := []corev1.EnvVar{
 		{
 			Name:  "S3_BUCKET_URL",
@@ -598,7 +626,7 @@ func s3Envs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBa
 		},
 		{
 			Name:  "ENDPOINT",
-			Value: bcp.Status.S3.EndpointURL,
+			Value: endpoint,
 		},
 		{
 			Name:  "DEFAULT_REGION",
@@ -626,30 +654,59 @@ func s3Envs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBa
 				},
 			},
 		},
+		{
+			Name: "S3_SESSION_TOKEN",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: bcp.Status.S3.CredentialsSecret,
+					},
+					Key:      "AWS_SESSION_TOKEN",
+					Optional: ptr.To(true),
+				},
+			},
+		},
+	}
+	if bcp.Status.S3.ForcePathStyle {
+		envs = append(envs, corev1.EnvVar{
+			Name:  "S3_FORCE_PATH",
+			Value: "true",
+		})
 	}
 	if pitr {
 		bucket := ""
 		storageS3 := new(api.BackupStorageS3Spec)
 		if bs := cr.Spec.PITR.BackupSource; bs != nil {
+			var err error
 			if bs.StorageName != "" {
 				storage, ok := cluster.Spec.Backup.Storages[bs.StorageName]
 				if ok {
 					storageS3 = storage.S3
-					bucket = storage.S3.Bucket
+					bucket, err = storage.S3.BucketURL()
+					if err != nil {
+						return nil, errors.Wrap(err, "failed to get bucket url")
+					}
 				}
 			}
 			if bs.S3 != nil {
 				storageS3 = bs.S3
-				bucket = storageS3.Bucket
+				bucket, err = storageS3.BucketURL()
+				if err != nil {
+					return nil, errors.Wrap(err, "failed to get bucket url")
+				}
 			}
 		}
 		if len(bucket) == 0 {
 			return nil, errors.New("no bucket in storage")
 		}
+		binlogEndpoint, err := storageS3.Endpoint()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get bucket endpoint")
+		}
 		envs = append(envs, []corev1.EnvVar{
 			{
 				Name:  "BINLOG_S3_ENDPOINT",
-				Value: storageS3.EndpointURL,
+				Value: binlogEndpoint,
 			},
 			{
 				Name:  "BINLOG_S3_REGION",
@@ -678,6 +735,18 @@ func s3Envs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBa
 				},
 			},
 			{
+				Name: "BINLOG_SESSION_TOKEN",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: storageS3.CredentialsSecret,
+						},
+						Key:      "AWS_SESSION_TOKEN",
+						Optional: ptr.To(true),
+					},
+				},
+			},
+			{
 				Name:  "BINLOG_S3_BUCKET_URL",
 				Value: bucket,
 			},
@@ -686,6 +755,14 @@ func s3Envs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBa
 				Value: "s3",
 			},
 		}...)
+		if storageS3.ForcePathStyle {
+			envs = append(envs,
+				corev1.EnvVar{
+					Name:  "BINLOG_S3_FORCE_PATH",
+					Value: "true",
+				},
+			)
+		}
 	}
 	return envs, nil
 }
@@ -765,8 +842,8 @@ func PrepareJob(
 			MountPath: "/etc/mysql/mysql-users-secret",
 		},
 		{
-			Name:      "vault-keyring-secret",
-			MountPath: "/etc/mysql/vault-keyring-secret",
+			Name:      statefulset.VaultSecretVolumeName,
+			MountPath: statefulset.VaultSecretMountPath,
 		},
 		{
 			Name:      "ssl",
@@ -802,8 +879,12 @@ func PrepareJob(
 			Name:      jobName,
 			Namespace: cr.Namespace,
 			Labels:    naming.LabelsRestoreJob(cluster, jobName, bcp.Status.StorageName),
+			Finalizers: []string{
+				naming.FinalizerKeepJob,
+			},
 		},
 		Spec: batchv1.JobSpec{
+			TTLSecondsAfterFinished: cluster.Spec.Backup.TTLSecondsAfterFinished,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: cluster.Spec.PXC.Annotations,

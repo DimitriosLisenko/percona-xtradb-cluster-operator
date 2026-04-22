@@ -2,6 +2,7 @@ package pxcbackup
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"reflect"
 	"strconv"
@@ -28,12 +29,15 @@ import (
 
 	"github.com/percona/percona-xtradb-cluster-operator/clientcmd"
 	api "github.com/percona/percona-xtradb-cluster-operator/pkg/apis/pxc/v1"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/features"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/k8s"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/naming"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/binlogcollector"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/version"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/xtrabackup"
 )
 
 // Add creates a new PerconaXtraDBClusterBackup Controller and adds it to the Manager. The Manager will set fields on the Controller
@@ -158,6 +162,27 @@ func (r *ReconcilePerconaXtraDBClusterBackup) Reconcile(ctx context.Context, req
 
 	log = log.WithValues("cluster", cluster.Name)
 
+	storage, ok := cluster.Spec.Backup.Storages[cr.Spec.StorageName]
+	if !ok {
+		err := errors.Errorf("storage %s doesn't exist", cr.Spec.StorageName)
+
+		if err := r.setFailedStatus(ctx, cr, err); err != nil {
+			return rr, errors.Wrap(err, "update status")
+		}
+
+		return reconcile.Result{}, err
+	}
+
+	// TODO: implement support
+	if storage.Type == api.BackupStorageFilesystem && features.Enabled(ctx, features.XtrabackupSidecar) {
+		err := fmt.Errorf("pvc backups are not supported when '%s' feature flag is enabled", features.XtrabackupSidecar)
+
+		if err := r.setFailedStatus(ctx, cr, err); err != nil {
+			return rr, errors.Wrap(err, "update status")
+		}
+		return reconcile.Result{}, err
+	}
+
 	err = cluster.CheckNSetDefaults(r.serverVersion, log)
 	if err != nil {
 		err := errors.Wrap(err, "wrong PXC options")
@@ -238,17 +263,6 @@ func (r *ReconcilePerconaXtraDBClusterBackup) Reconcile(ctx context.Context, req
 		return rr, nil
 	}
 
-	storage, ok := cluster.Spec.Backup.Storages[cr.Spec.StorageName]
-	if !ok {
-		err := errors.Errorf("storage %s doesn't exist", cr.Spec.StorageName)
-
-		if err := r.setFailedStatus(ctx, cr, err); err != nil {
-			return rr, errors.Wrap(err, "update status")
-		}
-
-		return reconcile.Result{}, err
-	}
-
 	log = log.WithValues("storage", cr.Spec.StorageName)
 
 	log.V(1).Info("Check if parallel backups are allowed", "allowed", cluster.Spec.Backup.GetAllowParallel())
@@ -309,9 +323,22 @@ func (r *ReconcilePerconaXtraDBClusterBackup) createBackupJob(
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get initImage")
 	}
-	job.Spec, err = bcp.JobSpec(cr.Spec, cluster, job, initImage)
+
+	xtrabackupEnabled := features.Enabled(ctx, features.XtrabackupSidecar)
+	getJobSpec := func() (batchv1.JobSpec, error) {
+		if xtrabackupEnabled {
+			srcNode, err := pxc.GetHostForSidecarBackup(ctx, r.client, cluster)
+			if err != nil {
+				return batchv1.JobSpec{}, errors.Wrap(err, "failed to get primary pod dns name")
+			}
+			return xtrabackup.JobSpec(cr, cluster, job, initImage, srcNode)
+		}
+		return bcp.JobSpec(cr.Spec, cluster, job, initImage)
+	}
+
+	job.Spec, err = getJobSpec()
 	if err != nil {
-		return nil, errors.Wrap(err, "can't create job spec")
+		return nil, fmt.Errorf("failed to get job spec: %w (xtrabackup enabled: %t)", err, xtrabackupEnabled)
 	}
 
 	switch storage.Type {
@@ -333,7 +360,7 @@ func (r *ReconcilePerconaXtraDBClusterBackup) createBackupJob(
 			return nil, errors.Wrap(err, "get backup pvc")
 		}
 
-		err := backup.SetStoragePVC(&job.Spec, cr, pvc.Name)
+		err := backup.SetStoragePVC(ctx, &job.Spec, cr, pvc.Name)
 		if err != nil {
 			return nil, errors.Wrap(err, "set storage FS")
 		}
@@ -344,10 +371,13 @@ func (r *ReconcilePerconaXtraDBClusterBackup) createBackupJob(
 		if storage.S3 == nil {
 			return nil, errors.New("s3 storage is not specified")
 		}
-		cr.Status.Destination.SetS3Destination(storage.S3.Bucket, cr.Spec.PXCCluster+"-"+cr.CreationTimestamp.Time.Format("2006-01-02-15:04:05")+"-full")
-
-		err := backup.SetStorageS3(&job.Spec, cr)
+		bucket, err := storage.S3.BucketURL()
 		if err != nil {
+			return nil, errors.Wrap(err, "failed to get bucket")
+		}
+		cr.Status.Destination.SetS3Destination(bucket, cr.Spec.PXCCluster+"-"+cr.CreationTimestamp.Time.Format("2006-01-02-15:04:05")+"-full")
+
+		if err := backup.SetStorageS3(ctx, &job.Spec, cr); err != nil {
 			return nil, errors.Wrap(err, "set storage FS")
 		}
 	case api.BackupStorageAzure:
@@ -356,10 +386,17 @@ func (r *ReconcilePerconaXtraDBClusterBackup) createBackupJob(
 		}
 		cr.Status.Destination.SetAzureDestination(storage.Azure.ContainerPath, cr.Spec.PXCCluster+"-"+cr.CreationTimestamp.Time.Format("2006-01-02-15:04:05")+"-full")
 
-		err := backup.SetStorageAzure(&job.Spec, cr)
+		err := backup.SetStorageAzure(ctx, &job.Spec, cr)
 		if err != nil {
 			return nil, errors.Wrap(err, "set storage FS for Azure")
 		}
+	}
+
+	if xtrabackupEnabled {
+		job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
+			Name:  "BACKUP_DEST",
+			Value: cr.Status.Destination.PathWithoutBucket(),
+		})
 	}
 
 	// Set PerconaXtraDBClusterBackup instance as the owner and controller
@@ -630,6 +667,23 @@ func getPXCBackupStateFromJob(job *batchv1.Job) api.PXCBackupState {
 	return api.BackupStarting
 }
 
+func (r *ReconcilePerconaXtraDBClusterBackup) checkJobPodsRunning(
+	ctx context.Context,
+	job *batchv1.Job,
+) (bool, error) {
+	pods := corev1.PodList{}
+	err := r.client.List(ctx, &pods, client.InNamespace(job.GetNamespace()), client.MatchingLabels(job.GetLabels()))
+	if err != nil {
+		return false, errors.Wrap(err, "list job pods")
+	}
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == corev1.PodRunning {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (r *ReconcilePerconaXtraDBClusterBackup) updateJobStatus(
 	ctx context.Context,
 	bcp *api.PerconaXtraDBClusterBackup,
@@ -666,6 +720,24 @@ func (r *ReconcilePerconaXtraDBClusterBackup) updateJobStatus(
 
 	if status.State == api.BackupSucceeded {
 		status.CompletedAt = job.Status.CompletionTime
+	}
+
+	// There is a bug in k8s 1.33.2 (possibly some earlier versions as well), where a suspended job after being un-suspended
+	// contains stale status. I.e, the job status still reflects the suspended state even though the job pods are running.
+	// As a consequence, the backup state may transition from Starting -> Succeeded without going through the Running state.
+	//
+	// As a workaround, when the computed state is `Starting`, we shall double check if there are any running pods.
+	// See: https://perconadev.atlassian.net/browse/K8SPXC-1772
+	//
+	// This was fixed in k8s 1.33.6. See: https://github.com/kubernetes/kubernetes/pull/135129
+	if status.State == api.BackupStarting {
+		running, err := r.checkJobPodsRunning(ctx, job)
+		if err != nil {
+			return errors.Wrap(err, "check job pods running")
+		}
+		if running {
+			status.State = api.BackupRunning
+		}
 	}
 
 	// don't update the status if there aren't any changes.
@@ -761,33 +833,42 @@ func (r *ReconcilePerconaXtraDBClusterBackup) suspendJobIfNeeded(
 
 	log := logf.FromContext(ctx)
 
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	job, err := r.getBackupJob(ctx, cr)
+	if err != nil {
+		if k8sErrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, cond := range job.Status.Conditions {
+		if cond.Status != corev1.ConditionTrue {
+			continue
+		}
+
+		switch cond.Type {
+		case batchv1.JobSuspended, batchv1.JobComplete:
+			return nil
+		}
+	}
+
+	if suspendedSpec := job.Spec.Suspend; suspendedSpec != nil && *suspendedSpec {
+		return nil // already suspended
+	}
+
+	log.Info("Suspending backup job",
+		"job", job.Name,
+		"clusterStatus", cluster.Status.Status,
+		"readyPXC", cluster.Status.PXC.Ready)
+
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get the latest job to avoid conflicting updates
 		job, err := r.getBackupJob(ctx, cr)
 		if err != nil {
-			if k8sErrors.IsNotFound(err) {
-				return nil
-			}
 			return err
 		}
 
-		for _, cond := range job.Status.Conditions {
-			if cond.Status != corev1.ConditionTrue {
-				continue
-			}
-
-			switch cond.Type {
-			case batchv1.JobSuspended, batchv1.JobComplete:
-				return nil
-			}
-		}
-
-		log.Info("Suspending backup job",
-			"job", job.Name,
-			"clusterStatus", cluster.Status.Status,
-			"readyPXC", cluster.Status.PXC.Ready)
-
 		job.Spec.Suspend = ptr.To(true)
-
 		err = r.client.Update(ctx, job)
 		if err != nil {
 			return err
@@ -815,33 +896,42 @@ func (r *ReconcilePerconaXtraDBClusterBackup) resumeJobIfNeeded(
 
 	log := logf.FromContext(ctx)
 
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	job, err := r.getBackupJob(ctx, cr)
+	if err != nil {
+		if k8sErrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	suspended := false
+	for _, cond := range job.Status.Conditions {
+		if cond.Type == batchv1.JobSuspended && cond.Status == corev1.ConditionTrue {
+			suspended = true
+		}
+	}
+
+	if suspendedSpec := job.Spec.Suspend; suspendedSpec != nil && !*suspendedSpec {
+		return nil // already resumed
+	}
+
+	if !suspended {
+		return nil
+	}
+
+	log.Info("Resuming backup job",
+		"job", job.Name,
+		"clusterStatus", cluster.Status.Status,
+		"readyPXC", cluster.Status.PXC.Ready)
+
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get the latest job to avoid conflicting updates
 		job, err := r.getBackupJob(ctx, cr)
 		if err != nil {
-			if k8sErrors.IsNotFound(err) {
-				return nil
-			}
 			return err
 		}
 
-		suspended := false
-		for _, cond := range job.Status.Conditions {
-			if cond.Type == batchv1.JobSuspended && cond.Status == corev1.ConditionTrue {
-				suspended = true
-			}
-		}
-
-		if !suspended {
-			return nil
-		}
-
-		log.Info("Resuming backup job",
-			"job", job.Name,
-			"clusterStatus", cluster.Status.Status,
-			"readyPXC", cluster.Status.PXC.Ready)
-
 		job.Spec.Suspend = ptr.To(false)
-
 		err = r.client.Update(ctx, job)
 		if err != nil {
 			return err

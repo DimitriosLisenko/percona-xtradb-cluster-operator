@@ -9,5 +9,4 @@ LICENSE
 operator.png
 kubernetes.svg
 .e2eignore
-release_versions
-.snyk
+e2e-tests/release_versions

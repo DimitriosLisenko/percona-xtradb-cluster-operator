@@ -3,11 +3,13 @@ package storage
 import (
 	"context"
 
-	api "github.com/percona/percona-xtradb-cluster-operator/pkg/apis/pxc/v1"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	api "github.com/percona/percona-xtradb-cluster-operator/pkg/apis/pxc/v1"
+	xbscapi "github.com/percona/percona-xtradb-cluster-operator/pkg/xtrabackup/api"
 )
 
 type Options interface {
@@ -38,6 +40,31 @@ func GetOptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.Pe
 		return getAzureOptionsFromBackup(ctx, cl, backup)
 	default:
 		return nil, errors.Errorf("unknown storage type %s", backup.Status.StorageType)
+	}
+}
+
+func GetOptionsFromBackupConfig(cfg *xbscapi.BackupConfig) (Options, error) {
+	switch cfg.Type {
+	case xbscapi.BackupStorageType_S3:
+		return &S3Options{
+			Endpoint:        cfg.S3.EndpointUrl,
+			AccessKeyID:     cfg.S3.AccessKey,
+			SecretAccessKey: cfg.S3.SecretKey,
+			SessionToken:    cfg.S3.SessionToken,
+			BucketName:      cfg.S3.Bucket,
+			Region:          cfg.S3.Region,
+			VerifyTLS:       cfg.VerifyTls,
+			ForcePathStyle:  cfg.S3.ForcePathStyle,
+		}, nil
+	case xbscapi.BackupStorageType_AZURE:
+		return &AzureOptions{
+			StorageAccount: cfg.Azure.StorageAccount,
+			AccessKey:      cfg.Azure.AccessKey,
+			Endpoint:       cfg.Azure.EndpointUrl,
+			Container:      cfg.Azure.ContainerName,
+		}, nil
+	default:
+		return nil, errors.Errorf("unknown storage type %s", cfg.Type)
 	}
 }
 
@@ -141,8 +168,16 @@ func getS3Options(
 
 	accessKeyID := string(secret.Data["AWS_ACCESS_KEY_ID"])
 	secretAccessKey := string(secret.Data["AWS_SECRET_ACCESS_KEY"])
+	sessionToken := string(secret.Data["AWS_SESSION_TOKEN"])
 
-	bucket, prefix := s3.BucketAndPrefix()
+	bucket, prefix, err := s3.BucketAndPrefix()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get bucket and prefix")
+	}
+	endpoint, err := s3.Endpoint()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get endpoint")
+	}
 	if bucket == "" {
 		return nil, errors.New("bucket name is not set")
 	}
@@ -166,14 +201,16 @@ func getS3Options(
 	}
 
 	return &S3Options{
-		Endpoint:        s3.EndpointURL,
+		Endpoint:        endpoint,
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,
+		SessionToken:    sessionToken,
 		BucketName:      bucket,
 		Prefix:          prefix,
 		Region:          region,
 		VerifyTLS:       verify,
 		CABundle:        caBundle,
+		ForcePathStyle:  s3.ForcePathStyle,
 	}, nil
 }
 
@@ -188,8 +225,16 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 	}
 	accessKeyID := string(secret.Data["AWS_ACCESS_KEY_ID"])
 	secretAccessKey := string(secret.Data["AWS_SECRET_ACCESS_KEY"])
+	sessionToken := string(secret.Data["AWS_SESSION_TOKEN"])
 
-	bucket, prefix := backup.Status.S3.BucketAndPrefix()
+	bucket, prefix, err := backup.Status.S3.BucketAndPrefix()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get bucket and prefix")
+	}
+	endpoint, err := backup.Status.S3.Endpoint()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get endpoint")
+	}
 	if bucket == "" {
 		bucket, prefix = backup.Status.Destination.BucketAndPrefix()
 	}
@@ -223,14 +268,16 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 	}
 
 	return &S3Options{
-		Endpoint:        backup.Status.S3.EndpointURL,
+		Endpoint:        endpoint,
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,
+		SessionToken:    sessionToken,
 		BucketName:      bucket,
 		Prefix:          prefix,
 		Region:          region,
 		VerifyTLS:       verifyTLS,
 		CABundle:        caBundle,
+		ForcePathStyle:  backup.Status.S3.ForcePathStyle,
 	}, nil
 }
 
@@ -240,11 +287,13 @@ type S3Options struct {
 	Endpoint        string
 	AccessKeyID     string
 	SecretAccessKey string
+	SessionToken    string
 	BucketName      string
 	Prefix          string
 	Region          string
 	VerifyTLS       bool
 	CABundle        []byte
+	ForcePathStyle  bool
 }
 
 func (o *S3Options) Type() api.BackupStorageType {

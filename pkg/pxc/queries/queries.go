@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	"github.com/go-sql-driver/mysql"
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,9 +26,12 @@ const (
 	ReaderHostgroup = "reader_hostgroup"
 )
 
-// value of writer group is hardcoded in ProxySQL config inside docker image
+// Hostgroup IDs are hardcoded in ProxySQL config inside docker image
 // https://github.com/percona/percona-docker/blob/pxc-operator-1.3.0/proxysql/dockerdir/etc/proxysql-admin.cnf#L23
-const writerID = 11
+const (
+	WriterHostgroupID = 11
+	ReaderHostgroupID = 10
+)
 
 type Database struct {
 	db *sql.DB
@@ -340,7 +342,7 @@ func (p *Database) ProxySQLInstanceStatus(host string) ([]string, error) {
 	return statuses, nil
 }
 
-func (p *Database) PresentInHostgroup(host string, hostgroup string) (bool, error) {
+func (p *Database) PresentInHostgroup(host string, hostgroup int) (bool, error) {
 	query := "SELECT COUNT(*) FROM runtime_mysql_servers WHERE hostgroup_id=? AND hostname LIKE ?"
 	var count int
 	err := p.db.QueryRow(query, hostgroup, host+"%").Scan(&count)
@@ -358,7 +360,7 @@ func (p *Database) PresentInHostgroup(host string, hostgroup string) (bool, erro
 
 func (p *Database) PrimaryHost() (string, error) {
 	var host string
-	err := p.db.QueryRow("SELECT hostname FROM runtime_mysql_servers WHERE hostgroup_id = ?", writerID).Scan(&host)
+	err := p.db.QueryRow("SELECT hostname FROM runtime_mysql_servers WHERE hostgroup_id = ?", WriterHostgroupID).Scan(&host)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", ErrNotFound
@@ -367,6 +369,42 @@ func (p *Database) PrimaryHost() (string, error) {
 	}
 
 	return host, nil
+}
+
+// ReaderHost returns any online host from the reader hostgroup (10).
+// This is useful for replica clusters where no writer hostgroup exists.
+func (p *Database) ReaderHost() (string, error) {
+	var host string
+	err := p.db.QueryRow("SELECT hostname FROM runtime_mysql_servers WHERE hostgroup_id = ? AND status = 'ONLINE' LIMIT 1", ReaderHostgroupID).Scan(&host)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+
+	return host, nil
+}
+
+func (p *Database) NonPrimaryHostsProxySQL() ([]string, error) {
+	rows, err := p.db.Query("SELECT DISTINCT hostname FROM runtime_mysql_servers WHERE hostgroup_id != ? AND status = 'ONLINE' AND hostname NOT IN (SELECT hostname FROM runtime_mysql_servers WHERE hostgroup_id = ? AND status = 'ONLINE');", WriterHostgroupID, WriterHostgroupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var hosts []string
+	for rows.Next() {
+		var host string
+		if err := rows.Scan(&host); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+		hosts = append(hosts, host)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to get rows: %w", err)
+	}
+	return hosts, nil
 }
 
 func (p *Database) Hostname() (string, error) {
