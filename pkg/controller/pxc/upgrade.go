@@ -38,8 +38,6 @@ const (
 	envVarsHashAnnotation     = "percona.com/env-secret-config-hash"
 )
 
-var NoProxyDetectedError = errors.New("can't detect enabled proxy, please enable HAProxy or ProxySQL")
-
 func (r *ReconcilePerconaXtraDBCluster) updatePod(
 	ctx context.Context,
 	sfs api.StatefulApp,
