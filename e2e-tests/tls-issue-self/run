@@ -7,6 +7,49 @@ test_dir=$(realpath $(dirname $0))
 
 set_debug
 
+# Generates internal TLS with cfssl and creates ${cluster}-ssl-internal-new in the target namespace.
+# Sets s_new in the global scope to that secret name for the caller.
+create_internal_tls_new_secret() {
+	local cluster_name=$1
+	local ns=$2
+	local rot_dir="${tmp_dir}/tls-rot-ssl-internal-new"
+	s_new="${cluster_name}-ssl-internal-new"
+	mkdir -p "$rot_dir"
+	(
+		cd "$rot_dir"
+		cat <<'EOF' | cfssl gencert -initca - | cfssljson -bare ca
+{
+  "CN": "Root CA",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  }
+}
+EOF
+		cat <<EOF | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem - | cfssljson -bare server
+{
+  "hosts": [
+    "${cluster_name}-pxc",
+    "${cluster_name}-proxysql",
+    "*.${cluster_name}-proxysql-unready",
+    "*.${cluster_name}-pxc"
+  ],
+  "CN": "${cluster_name}-pxc",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  }
+}
+EOF
+	)
+	kubectl_bin delete secret "$s_new" -n "$ns" --ignore-not-found=true
+	kubectl_bin create secret generic "$s_new" -n "$ns" \
+		--from-file=tls.crt="${rot_dir}/server.pem" \
+		--from-file=tls.key="${rot_dir}/server-key.pem" \
+		--from-file=ca.crt="${rot_dir}/ca.pem" \
+		--type=Opaque
+}
+
 main() {
 	create_infra $namespace
 	kubectl_bin delete -f https://github.com/jetstack/cert-manager/releases/download/v${CERT_MANAGER_VER}/cert-manager.yaml 2>/dev/null || :
@@ -57,6 +100,26 @@ main() {
 		echo "error: secret $cluster-ssl-internal doesn't exist"
 		exit 1
 	fi
+
+	desc 'check tls rotation (internal secret via -new)'
+
+	create_internal_tls_new_secret "$cluster" "$namespace"
+
+	desc 'wait for internal TLS rotation'
+	rotate_deadline=$(($(date +%s) + 300))
+	while kubectl_bin get secret "$s_new" -n "$namespace" &>/dev/null; do
+		if [ "$(date +%s)" -ge "$rotate_deadline" ]; then
+			echo "timeout: ${s_new} was not removed after internal TLS rotation (waited 5m)"
+			exit 1
+		fi
+		sleep 5
+	done
+	wait_cluster_consistency "$cluster" 3 2
+
+	desc 'verify data after internal TLS rotation'
+	run_mysql "CREATE DATABASE IF NOT EXISTS myApp; USE myApp; CREATE TABLE IF NOT EXISTS myApp (id int PRIMARY KEY); INSERT INTO myApp.myApp (id) VALUES (100500) ON DUPLICATE KEY UPDATE id=id;" \
+		"-h $cluster-pxc-0.$cluster-pxc -uroot -proot_password"
+	compare_mysql_cmd "select-1" "SELECT * from myApp.myApp;" "-h $cluster-pxc-0.$cluster-pxc -uroot -proot_password"
 
 	destroy "$namespace"
 	desc "test passed"
