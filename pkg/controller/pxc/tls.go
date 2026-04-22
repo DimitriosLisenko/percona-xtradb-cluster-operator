@@ -456,7 +456,6 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 	}
 
 	// secretObj contains the current TLS certificates
-	// TODO: validate this secret, at least check it it contains required keys.
 	secretObj := corev1.Secret{}
 	if err := r.client.Get(ctx,
 		types.NamespacedName{
@@ -466,6 +465,13 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 		&secretObj,
 	); err != nil {
 		return false, errors.Wrap(err, "failed to get secret")
+	}
+
+	// Validate that our secret contains the required keys.
+	for _, key := range []string{"ca.crt", "tls.crt", "tls.key"} {
+		if _, ok := secretObj.Data[key]; !ok {
+			return false, errors.Errorf("secret %s does not contain required key '%s'", secretName, key)
+		}
 	}
 
 	log := logf.FromContext(ctx).WithValues("secretName", secretName)
@@ -493,6 +499,12 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 	newCA := newSecretObj.Data["ca.crt"]
 	if !bytes.Contains(currentCA, newCA) {
 		log.Info("Combining new CA certificate and applying")
+
+		// Ensure that current CA always ends in a newline.
+		if len(currentCA) > 0 && currentCA[len(currentCA)-1] != '\n' {
+			currentCA = append(currentCA, '\n')
+		}
+
 		combined := []byte{}
 		combined = append(combined, currentCA...)
 		combined = append(combined, newCA...)
