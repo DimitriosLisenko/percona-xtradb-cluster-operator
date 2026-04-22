@@ -410,7 +410,8 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificates(
 	ctx context.Context,
 	cr *api.PerconaXtraDBCluster,
 ) error {
-	if !cr.TLSEnabled() {
+	// No need to rotate certificates if TLS is disabled or certificates are managed by cert-manager
+	if cr.Spec.TLS == nil || !cr.TLSEnabled() || cr.Spec.TLS.IssuerConf != nil {
 		return nil
 	}
 
@@ -432,15 +433,12 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificates(
 // rotateSSLCertificate rotates the TLS certificates for the given secret name
 // returns true if the certificate rotation is in progress, false otherwise
 // returns an error if the certificate rotation fails
+// TODO: we should show this in the status somewhere, preferably in conditions. However, it needs refactor first.
 func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 	ctx context.Context,
 	cr *api.PerconaXtraDBCluster,
 	secretName string,
 ) (bool, error) {
-	if !cr.TLSEnabled() {
-		return false, nil
-	}
-
 	// newSecret contains the new TLS certificates
 	newSecretName := secretName + "-new"
 	newSecretObj := corev1.Secret{}
@@ -465,17 +463,10 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 		},
 		&secretObj,
 	); err != nil {
-		// todo: if not found, should we create the secret using newSecretObj?
 		return false, fmt.Errorf("failed to get secret %s: %w", secretName, err)
 	}
 
 	log := logf.FromContext(ctx).WithValues("secretName", secretName)
-
-	if added, err := r.addTLSCertRotationAnnotation(ctx, cr, secretName); err != nil {
-		return false, fmt.Errorf("failed to add SSL certificate rotation annotation: %w", err)
-	} else if added {
-		log.Info("Starting SSL certificate rotation")
-	}
 
 	// Wait for current set of TLS certificates to be applied onto the PXC nodes.
 	if ok, err := r.isSSLReconciled(ctx, cr, secretName); err != nil {
@@ -516,10 +507,6 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 		return true, r.client.Update(ctx, updatedSecret)
 	}
 
-	if err := r.removeTLSCertRotationAnnotation(ctx, cr, secretName); err != nil {
-		return false, fmt.Errorf("failed to remove SSL certificate rotation annotation: %w", err)
-	}
-
 	if !newSecretObj.GetDeletionTimestamp().IsZero() {
 		return false, nil
 	}
@@ -530,54 +517,6 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 	log.Info("SSL certificate rotation completed")
 
 	return false, nil
-}
-func (r *ReconcilePerconaXtraDBCluster) removeTLSCertRotationAnnotation(ctx context.Context, cr *api.PerconaXtraDBCluster, secretName string) error {
-	annots := cr.GetAnnotations()
-	var annot string
-	switch secretName {
-	case cr.Spec.PXC.SSLSecretName:
-		annot = api.AnnotationSSLCertRotationInProgress
-	case cr.Spec.PXC.SSLInternalSecretName:
-		annot = api.AnnotationInternalSSLCertRotationInProgress
-	default:
-		return fmt.Errorf("unknown secret name for SSL certificate rotation: %s", secretName)
-	}
-
-	_, exists := annots[annot]
-	if !exists {
-		return nil
-	}
-
-	delete(annots, annot)
-	cr.SetAnnotations(annots)
-	return r.client.Update(ctx, cr)
-}
-
-func (r *ReconcilePerconaXtraDBCluster) addTLSCertRotationAnnotation(ctx context.Context, cr *api.PerconaXtraDBCluster, secretName string) (bool, error) {
-	annots := cr.GetAnnotations()
-	if annots == nil {
-		annots = make(map[string]string)
-	}
-
-	var annot string
-	switch secretName {
-	case cr.Spec.PXC.SSLSecretName:
-		annot = api.AnnotationSSLCertRotationInProgress
-	case cr.Spec.PXC.SSLInternalSecretName:
-		annot = api.AnnotationInternalSSLCertRotationInProgress
-	default:
-		return false, fmt.Errorf("unknown secret name for SSL certificate rotation: %s", secretName)
-	}
-
-	_, exists := annots[annot]
-	if exists {
-		return false, nil
-	}
-
-	now := metav1.Now().Format(time.RFC3339)
-	annots[annot] = now
-	cr.SetAnnotations(annots)
-	return true, r.client.Update(ctx, cr)
 }
 
 func (r *ReconcilePerconaXtraDBCluster) isSSLReconciled(ctx context.Context, cr *api.PerconaXtraDBCluster, secretName string) (bool, error) {
