@@ -112,14 +112,14 @@ main() {
 			echo "timeout: ${s_new} was not removed after internal TLS rotation (waited 5m)"
 			exit 1
 		fi
+		probe=$(run_mysql "SELECT 1;" "-h ${cluster}-proxysql -uroot -proot_password")
+		if [ "$probe" != "1" ]; then
+			echo "error: downtime during certificate rotation"
+			exit 1
+		fi
 		sleep 5
 	done
 	wait_cluster_consistency "$cluster" 3 2
-
-	desc 'verify data after internal TLS rotation'
-	run_mysql "CREATE DATABASE IF NOT EXISTS myApp; USE myApp; CREATE TABLE IF NOT EXISTS myApp (id int PRIMARY KEY); INSERT INTO myApp.myApp (id) VALUES (100500) ON DUPLICATE KEY UPDATE id=id;" \
-		"-h $cluster-pxc-0.$cluster-pxc -uroot -proot_password"
-	compare_mysql_cmd "select-1" "SELECT * from myApp.myApp;" "-h $cluster-pxc-0.$cluster-pxc -uroot -proot_password"
 
 	destroy "$namespace"
 	desc "test passed"
