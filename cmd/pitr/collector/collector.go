@@ -97,6 +97,7 @@ type Config struct {
 	BufferSize         int64   `env:"BUFFER_SIZE"`
 	CollectSpanSec     float64 `env:"COLLECT_SPAN_SEC" envDefault:"60"`
 	VerifyTLS          bool    `env:"VERIFY_TLS" envDefault:"true"`
+	SkipBucketExists   bool    `env:"S3_SKIP_BUCKET_EXISTS" envDefault:"false"`
 	TimeoutSeconds     float64 `env:"TIMEOUT_SECONDS" envDefault:"60"`
 	GTIDCacheKey       string  `env:"GTID_CACHE_KEY,required"`
 }
@@ -146,7 +147,7 @@ func New(ctx context.Context, c Config) (*Collector, error) {
 			return nil, errors.Wrap(err, "read CA bundle file")
 		}
 
-		s, err = storage.NewS3(ctx, c.BackupStorageS3.Endpoint, c.BackupStorageS3.AccessKeyID, c.BackupStorageS3.AccessKey, c.BackupStorageS3.SessionToken, bucketArr[0], prefix, c.BackupStorageS3.Region, c.VerifyTLS, caBundle, c.BackupStorageS3.ForcePath)
+		s, err = storage.NewS3(ctx, c.BackupStorageS3.Endpoint, c.BackupStorageS3.AccessKeyID, c.BackupStorageS3.AccessKey, c.BackupStorageS3.SessionToken, bucketArr[0], prefix, c.BackupStorageS3.Region, c.VerifyTLS, caBundle, c.BackupStorageS3.ForcePath, c.SkipBucketExists)
 		if err != nil {
 			return nil, errors.Wrap(err, "new storage manager")
 		}

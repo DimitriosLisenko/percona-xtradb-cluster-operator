@@ -23,6 +23,7 @@ import (
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/config"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/statefulset"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/users"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/util"
 )
@@ -497,6 +498,10 @@ func restoreJobEnvs(
 		Name:  "VERIFY_TLS",
 		Value: strconv.FormatBool(verifyTLS),
 	})
+
+	if env := storage.SkipBucketExistsEnv(); env != nil {
+		envs = append(envs, *env)
+	}
 
 	if features.Enabled(ctx, features.XtrabackupSidecar) {
 		envs = append(envs, corev1.EnvVar{

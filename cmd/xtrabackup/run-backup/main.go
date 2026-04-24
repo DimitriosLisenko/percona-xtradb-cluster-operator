@@ -95,6 +95,7 @@ func getRequestObject() *xbscapi.CreateBackupRequest {
 	req.BackupName = os.Getenv("BACKUP_NAME")
 	req.BackupConfig.Destination = os.Getenv("BACKUP_DEST")
 	req.BackupConfig.VerifyTls = os.Getenv("VERIFY_TLS") == "true"
+	req.BackupConfig.SkipBucketExists = os.Getenv("S3_SKIP_BUCKET_EXISTS") == "true"
 	req.BackupConfig.ContainerOptions = &xbscapi.ContainerOptions{
 		Args: &xbscapi.BackupContainerArgs{
 			Xtrabackup: strings.Fields(os.Getenv("XB_EXTRA_ARGS")),

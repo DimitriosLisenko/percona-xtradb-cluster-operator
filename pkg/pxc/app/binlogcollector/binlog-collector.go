@@ -23,7 +23,7 @@ import (
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/statefulset"
-	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
+	bstorage "github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/users"
 )
 
@@ -352,6 +352,10 @@ func getStorageEnvs(cr *api.PerconaXtraDBCluster) ([]corev1.EnvVar, error) {
 		})
 	}
 
+	if env := bstorage.SkipBucketExistsEnv(); env != nil {
+		envs = append(envs, *env)
+	}
+
 	return envs, nil
 }
 
@@ -429,12 +433,12 @@ func InvalidateCache(
 ) error {
 	log := logf.FromContext(ctx)
 
-	opts, err := storage.GetOptions(ctx, cl, cluster, cluster.Spec.Backup.PITR.StorageName)
+	opts, err := bstorage.GetOptions(ctx, cl, cluster, cluster.Spec.Backup.PITR.StorageName)
 	if err != nil {
 		return errors.Wrap(err, "get pitr storage options")
 	}
 
-	stg, err := storage.NewClient(ctx, opts)
+	stg, err := bstorage.NewClient(ctx, opts)
 	if err != nil {
 		return errors.Wrap(err, "new storage client")
 	}

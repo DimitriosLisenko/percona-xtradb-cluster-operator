@@ -49,6 +49,7 @@ type Config struct {
 	RecoverType        string `env:"PITR_RECOVERY_TYPE,required"`
 	GTID               string `env:"PITR_GTID"`
 	VerifyTLS          bool   `env:"VERIFY_TLS" envDefault:"true"`
+	SkipBucketExists   bool   `env:"S3_SKIP_BUCKET_EXISTS" envDefault:"false"`
 	StorageType        string `env:"STORAGE_TYPE,required"`
 	BinlogStorageS3    BinlogS3
 	BinlogStorageAzure BinlogAzure
@@ -69,7 +70,7 @@ func (c Config) storages(ctx context.Context) (storage.Storage, storage.Storage,
 			return nil, nil, errors.Wrap(err, "read CA bundle file")
 		}
 
-		binlogStorage, err = storage.NewS3(ctx, c.BinlogStorageS3.Endpoint, c.BinlogStorageS3.AccessKeyID, c.BinlogStorageS3.AccessKey, c.BinlogStorageS3.SessionToken, bucket, prefix, c.BinlogStorageS3.Region, c.VerifyTLS, caBundle, c.BinlogStorageS3.ForcePath)
+		binlogStorage, err = storage.NewS3(ctx, c.BinlogStorageS3.Endpoint, c.BinlogStorageS3.AccessKeyID, c.BinlogStorageS3.AccessKey, c.BinlogStorageS3.SessionToken, bucket, prefix, c.BinlogStorageS3.Region, c.VerifyTLS, caBundle, c.BinlogStorageS3.ForcePath, c.SkipBucketExists)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "new s3 storage")
 		}
@@ -78,7 +79,7 @@ func (c Config) storages(ctx context.Context) (storage.Storage, storage.Storage,
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "get bucket and prefix")
 		}
-		defaultStorage, err = storage.NewS3(ctx, c.BackupStorageS3.Endpoint, c.BackupStorageS3.AccessKeyID, c.BackupStorageS3.AccessKey, c.BackupStorageS3.SessionToken, bucket, prefix, c.BackupStorageS3.Region, c.VerifyTLS, caBundle, c.BackupStorageS3.ForcePath)
+		defaultStorage, err = storage.NewS3(ctx, c.BackupStorageS3.Endpoint, c.BackupStorageS3.AccessKeyID, c.BackupStorageS3.AccessKey, c.BackupStorageS3.SessionToken, bucket, prefix, c.BackupStorageS3.Region, c.VerifyTLS, caBundle, c.BackupStorageS3.ForcePath, c.SkipBucketExists)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "new storage manager")
 		}

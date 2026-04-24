@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"os"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -11,6 +12,22 @@ import (
 	api "github.com/percona/percona-xtradb-cluster-operator/pkg/apis/pxc/v1"
 	xbscapi "github.com/percona/percona-xtradb-cluster-operator/pkg/xtrabackup/api"
 )
+
+// SkipBucketExistsEnvVar is the environment variable name that controls
+// whether to skip S3 bucket existence checks (HeadBucket API calls).
+const SkipBucketExistsEnvVar = "S3_SKIP_BUCKET_EXISTS"
+
+// SkipBucketExistsEnv returns a corev1.EnvVar for propagating the skip-bucket-exists
+// flag to child pods, or nil if the flag is not enabled on the operator.
+func SkipBucketExistsEnv() *corev1.EnvVar {
+	if os.Getenv(SkipBucketExistsEnvVar) == "true" {
+		return &corev1.EnvVar{
+			Name:  SkipBucketExistsEnvVar,
+			Value: "true",
+		}
+	}
+	return nil
+}
 
 type Options interface {
 	Type() api.BackupStorageType
@@ -47,14 +64,15 @@ func GetOptionsFromBackupConfig(cfg *xbscapi.BackupConfig) (Options, error) {
 	switch cfg.Type {
 	case xbscapi.BackupStorageType_S3:
 		return &S3Options{
-			Endpoint:        cfg.S3.EndpointUrl,
-			AccessKeyID:     cfg.S3.AccessKey,
-			SecretAccessKey: cfg.S3.SecretKey,
-			SessionToken:    cfg.S3.SessionToken,
-			BucketName:      cfg.S3.Bucket,
-			Region:          cfg.S3.Region,
-			VerifyTLS:       cfg.VerifyTls,
-			ForcePathStyle:  cfg.S3.ForcePathStyle,
+			Endpoint:         cfg.S3.EndpointUrl,
+			AccessKeyID:      cfg.S3.AccessKey,
+			SecretAccessKey:  cfg.S3.SecretKey,
+			SessionToken:     cfg.S3.SessionToken,
+			BucketName:       cfg.S3.Bucket,
+			Region:           cfg.S3.Region,
+			VerifyTLS:        cfg.VerifyTls,
+			ForcePathStyle:   cfg.S3.ForcePathStyle,
+			SkipBucketExists: cfg.SkipBucketExists,
 		}, nil
 	case xbscapi.BackupStorageType_AZURE:
 		return &AzureOptions{
@@ -201,16 +219,17 @@ func getS3Options(
 	}
 
 	return &S3Options{
-		Endpoint:        endpoint,
-		AccessKeyID:     accessKeyID,
-		SecretAccessKey: secretAccessKey,
-		SessionToken:    sessionToken,
-		BucketName:      bucket,
-		Prefix:          prefix,
-		Region:          region,
-		VerifyTLS:       verify,
-		CABundle:        caBundle,
-		ForcePathStyle:  s3.ForcePathStyle,
+		Endpoint:         endpoint,
+		AccessKeyID:      accessKeyID,
+		SecretAccessKey:  secretAccessKey,
+		SessionToken:     sessionToken,
+		BucketName:       bucket,
+		Prefix:           prefix,
+		Region:           region,
+		VerifyTLS:        verify,
+		CABundle:         caBundle,
+		ForcePathStyle:   s3.ForcePathStyle,
+		SkipBucketExists: os.Getenv(SkipBucketExistsEnvVar) == "true",
 	}, nil
 }
 
@@ -268,32 +287,34 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 	}
 
 	return &S3Options{
-		Endpoint:        endpoint,
-		AccessKeyID:     accessKeyID,
-		SecretAccessKey: secretAccessKey,
-		SessionToken:    sessionToken,
-		BucketName:      bucket,
-		Prefix:          prefix,
-		Region:          region,
-		VerifyTLS:       verifyTLS,
-		CABundle:        caBundle,
-		ForcePathStyle:  backup.Status.S3.ForcePathStyle,
+		Endpoint:         endpoint,
+		AccessKeyID:      accessKeyID,
+		SecretAccessKey:  secretAccessKey,
+		SessionToken:     sessionToken,
+		BucketName:       bucket,
+		Prefix:           prefix,
+		Region:           region,
+		VerifyTLS:        verifyTLS,
+		CABundle:         caBundle,
+		ForcePathStyle:   backup.Status.S3.ForcePathStyle,
+		SkipBucketExists: os.Getenv(SkipBucketExistsEnvVar) == "true",
 	}, nil
 }
 
 var _ = Options(new(S3Options))
 
 type S3Options struct {
-	Endpoint        string
-	AccessKeyID     string
-	SecretAccessKey string
-	SessionToken    string
-	BucketName      string
-	Prefix          string
-	Region          string
-	VerifyTLS       bool
-	CABundle        []byte
-	ForcePathStyle  bool
+	Endpoint         string
+	AccessKeyID      string
+	SecretAccessKey  string
+	SessionToken     string
+	BucketName       string
+	Prefix           string
+	Region           string
+	VerifyTLS        bool
+	CABundle         []byte
+	ForcePathStyle   bool
+	SkipBucketExists bool
 }
 
 func (o *S3Options) Type() api.BackupStorageType {
