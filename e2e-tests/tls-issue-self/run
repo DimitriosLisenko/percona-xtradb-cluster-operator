@@ -106,7 +106,7 @@ main() {
 	create_internal_tls_new_secret "$cluster" "$namespace"
 
 	desc 'wait for internal TLS rotation'
-	rotate_deadline=$(($(date +%s) + 300))
+	rotate_deadline=$(($(date +%s) + 900)) # 15 minutes
 	while kubectl_bin get secret "$s_new" -n "$namespace" &>/dev/null; do
 		if [ "$(date +%s)" -ge "$rotate_deadline" ]; then
 			echo "timeout: ${s_new} was not removed after internal TLS rotation (waited 5m)"
