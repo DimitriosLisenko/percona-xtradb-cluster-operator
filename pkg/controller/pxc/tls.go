@@ -430,18 +430,15 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificates(
 	return nil
 }
 
-// rotateSSLCertificate applies the no-downtime internal TLS rotation described in
-// “Update certificates without downtime”
-// (https://docs.percona.com/percona-operator-for-mysql/pxc/tls-update.html#update-certificates-without-downtime).
-// The user places the desired new material in a companion Secret named "<secretName>-new"
+// rotateSSLCertificate applies new TLS certificates without downtime.
+// The user places the desired new certificates in a Secret named "<secretName>-new"
 // (see keys ca.crt, tls.crt, tls.key), then the reconciler:
-//  1. Replaces only ca.crt with a PEM bundle: new CA first, then the previous CA
-//     (while tls.crt and tls.key stay the currently deployed cert/key);
+//  1. Replaces only ca.crt with a combined CA certificate (new and old)
 //  2. Replaces tls.crt and tls.key with the new cert and key, leaving the combined ca.crt;
 //  3. Replaces ca.crt with the new CA only.
 //
 // It returns (true, nil) while a rolling restart is expected before the next step;
-// (false, nil) when the rotation is finished and the -new secret was removed.
+// (false, nil) when the rotation is finished and the -new secret is removed.
 // TODO: we should show this in the status somewhere, preferably in conditions. However, it needs refactor first.
 func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 	ctx context.Context,
