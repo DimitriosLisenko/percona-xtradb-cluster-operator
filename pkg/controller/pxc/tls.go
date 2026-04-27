@@ -430,10 +430,18 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificates(
 	return nil
 }
 
-// rotateSSLCertificate rotates the TLS certificates for the given secret name.
-// returns true if the certificate rotation is in progress, false otherwise.
-// returns an error if the certificate rotation fails
+// rotateSSLCertificate applies the no-downtime internal TLS rotation described in
+// “Update certificates without downtime”
+// (https://docs.percona.com/percona-operator-for-mysql/pxc/tls-update.html#update-certificates-without-downtime).
+// The user places the desired new material in a companion Secret named "<secretName>-new"
+// (see keys ca.crt, tls.crt, tls.key), then the reconciler:
+//  1. Replaces only ca.crt with a PEM bundle: new CA first, then the previous CA
+//     (while tls.crt and tls.key stay the currently deployed cert/key);
+//  2. Replaces tls.crt and tls.key with the new cert and key, leaving the combined ca.crt;
+//  3. Replaces ca.crt with the new CA only.
 //
+// It returns (true, nil) while a rolling restart is expected before the next step;
+// (false, nil) when the rotation is finished and the -new secret was removed.
 // TODO: we should show this in the status somewhere, preferably in conditions. However, it needs refactor first.
 func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 	ctx context.Context,
@@ -467,10 +475,13 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 		return false, errors.Wrap(err, "failed to get secret")
 	}
 
-	// Validate that our secret contains the required keys.
+	// Validate that our secrets contain the required keys.
 	for _, key := range []string{"ca.crt", "tls.crt", "tls.key"} {
 		if _, ok := secretObj.Data[key]; !ok {
 			return false, errors.Errorf("secret %s does not contain required key '%s'", secretName, key)
+		}
+		if _, ok := newSecretObj.Data[key]; !ok {
+			return false, errors.Errorf("secret %s does not contain required key '%s'", newSecretName, key)
 		}
 	}
 
@@ -494,26 +505,25 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 		return false, nil
 	}
 
-	// step 1: combine both CA certificates
+	// Step 1: combine new and current CA certificates
 	currentCA := secretObj.Data["ca.crt"]
 	newCA := newSecretObj.Data["ca.crt"]
-	if !bytes.Contains(currentCA, newCA) {
+	if len(newCA) > 0 && !bytes.Contains(currentCA, newCA) {
 		log.Info("Combining new CA certificate and applying")
 
-		// Ensure that current CA always ends in a newline.
-		if len(currentCA) > 0 && currentCA[len(currentCA)-1] != '\n' {
-			currentCA = append(currentCA, '\n')
+		combined := append([]byte{}, newCA...)
+		if len(combined) > 0 && combined[len(combined)-1] != '\n' {
+			// Ensure newline
+			combined = append(combined, '\n')
 		}
-
-		combined := []byte{}
 		combined = append(combined, currentCA...)
-		combined = append(combined, newCA...)
+
 		updatedSecret := secretObj.DeepCopy()
 		updatedSecret.Data["ca.crt"] = combined
 		return true, r.client.Update(ctx, updatedSecret)
 	}
 
-	// step 2: use new TLS certificates
+	// Step 2: new server cert and key with the combined trust bundle in ca.crt unchanged.
 	currentTLSCert := secretObj.Data["tls.crt"]
 	newTLSCert := newSecretObj.Data["tls.crt"]
 	currentTLSKey := secretObj.Data["tls.key"]
@@ -526,8 +536,7 @@ func (r *ReconcilePerconaXtraDBCluster) rotateSSLCertificate(
 		return true, r.client.Update(ctx, updatedSecret)
 	}
 
-	// step 3: use new CA certificate
-	// At this point, the updated secret must be the same as the new secret.
+	// Step 3: only the new CA in ca.crt; tls.crt/tls.key already match the new material.
 	if !bytes.Equal(currentCA, newCA) {
 		log.Info("Applying new CA certificate")
 		updatedSecret := secretObj.DeepCopy()
