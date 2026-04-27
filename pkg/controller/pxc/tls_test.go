@@ -62,86 +62,70 @@ func TestRotateSSLCertificate(t *testing.T) {
 		scheme: cl.Scheme(),
 	}
 
-	t.Run("no new rotation secret", func(t *testing.T) {
-		inProgress, err := r.rotateSSLCertificate(ctx, cr, cr.Spec.PXC.SSLInternalSecretName)
-		require.NoError(t, err)
-		require.False(t, inProgress)
-	})
+	// No TLS rotation in progress
+	inProgress, err := r.rotateSSLCertificate(ctx, cr, cr.Spec.PXC.SSLInternalSecretName)
+	require.NoError(t, err)
+	require.False(t, inProgress, "TLS rotation in progress")
 
-	t.Run("combined CA is applied", func(t *testing.T) {
-		err = cl.Create(ctx, newSecret)
-		require.NoError(t, err)
+	// Create a new TLS certificate secret
+	err = cl.Create(ctx, newSecret)
+	require.NoError(t, err)
+	ensureSSLReconciled(t, r, cr, cr.Spec.PXC.SSLInternalSecretName)
 
-		ensureSSLReconciled(t, r, cr, cr.Spec.PXC.SSLInternalSecretName)
+	// Step 1: Assert that combined CA is applied
+	inProgress, err = r.rotateSSLCertificate(ctx, cr, cr.Spec.PXC.SSLInternalSecretName)
+	require.NoError(t, err)
+	require.True(t, inProgress, "TLS rotation is not in progress")
+	internalSecret = &corev1.Secret{}
+	err = cl.Get(ctx, types.NamespacedName{
+		Namespace: cr.GetNamespace(),
+		Name:      cr.Spec.PXC.SSLInternalSecretName,
+	}, internalSecret)
+	require.NoError(t, err)
+	currentCA := internalSecret.Data["ca.crt"]
+	require.True(t, bytes.Contains(currentCA, newSecret.Data["ca.crt"]), "New CA is not appended with existing")
 
-		inProgress, err := r.rotateSSLCertificate(ctx, cr, cr.Spec.PXC.SSLInternalSecretName)
-		require.NoError(t, err)
-		require.True(t, inProgress)
+	// Step 2: Assert that new TLS certificate is applied
+	ensureSSLReconciled(t, r, cr, cr.Spec.PXC.SSLInternalSecretName)
+	inProgress, err = r.rotateSSLCertificate(ctx, cr, cr.Spec.PXC.SSLInternalSecretName)
+	require.NoError(t, err)
+	require.True(t, inProgress, "TLS rotation is not in progress")
+	internalSecret = &corev1.Secret{}
+	err = cl.Get(ctx, types.NamespacedName{
+		Namespace: cr.GetNamespace(),
+		Name:      cr.Spec.PXC.SSLInternalSecretName,
+	}, internalSecret)
+	require.NoError(t, err)
 
-		// Check that new CA is appended with existing
-		internalSecret := &corev1.Secret{}
-		err = cl.Get(ctx, types.NamespacedName{
-			Namespace: cr.GetNamespace(),
-			Name:      cr.Spec.PXC.SSLInternalSecretName,
-		}, internalSecret)
-		require.NoError(t, err)
+	currentTLSKey := internalSecret.Data["tls.key"]
+	require.Equal(t, newSecret.Data["tls.key"], currentTLSKey, "New TLS key is not applied")
+	currentTLSCert := internalSecret.Data["tls.crt"]
+	require.Equal(t, newSecret.Data["tls.crt"], currentTLSCert, "New TLS certificate is not applied")
 
-		currentCA := internalSecret.Data["ca.crt"]
-		require.True(t, bytes.Contains(currentCA, newSecret.Data["ca.crt"]))
-	})
+	// Step 3: old CA is replaced with new CA
+	ensureSSLReconciled(t, r, cr, cr.Spec.PXC.SSLInternalSecretName)
+	inProgress, err = r.rotateSSLCertificate(ctx, cr, cr.Spec.PXC.SSLInternalSecretName)
+	require.NoError(t, err)
+	require.True(t, inProgress, "TLS rotation is not in progress")
+	internalSecret = &corev1.Secret{}
+	err = cl.Get(ctx, types.NamespacedName{
+		Namespace: cr.GetNamespace(),
+		Name:      cr.Spec.PXC.SSLInternalSecretName,
+	}, internalSecret)
+	require.NoError(t, err)
 
-	t.Run("new TLS certificate is applied", func(t *testing.T) {
-		ensureSSLReconciled(t, r, cr, cr.Spec.PXC.SSLInternalSecretName)
+	currentCA = internalSecret.Data["ca.crt"]
+	require.Equal(t, newSecret.Data["ca.crt"], currentCA, "Old CA is not replaced with new CA")
 
-		inProgress, err := r.rotateSSLCertificate(ctx, cr, cr.Spec.PXC.SSLInternalSecretName)
-		require.NoError(t, err)
-		require.True(t, inProgress)
-
-		// Check that new TLS certificate is applied
-		internalSecret := &corev1.Secret{}
-		err = cl.Get(ctx, types.NamespacedName{
-			Namespace: cr.GetNamespace(),
-			Name:      cr.Spec.PXC.SSLInternalSecretName,
-		}, internalSecret)
-		require.NoError(t, err)
-
-		currentTLSKey := internalSecret.Data["tls.key"]
-		require.Equal(t, newSecret.Data["tls.key"], currentTLSKey)
-		currentTLSCert := internalSecret.Data["tls.crt"]
-		require.Equal(t, newSecret.Data["tls.crt"], currentTLSCert)
-	})
-
-	t.Run("new CA is applied", func(t *testing.T) {
-		ensureSSLReconciled(t, r, cr, cr.Spec.PXC.SSLInternalSecretName)
-
-		inProgress, err := r.rotateSSLCertificate(ctx, cr, cr.Spec.PXC.SSLInternalSecretName)
-		require.NoError(t, err)
-		require.True(t, inProgress)
-
-		// Check that new TLS certificate is applied
-		internalSecret := &corev1.Secret{}
-		err = cl.Get(ctx, types.NamespacedName{
-			Namespace: cr.GetNamespace(),
-			Name:      cr.Spec.PXC.SSLInternalSecretName,
-		}, internalSecret)
-		require.NoError(t, err)
-
-		currentCA := internalSecret.Data["ca.crt"]
-		require.Equal(t, newSecret.Data["ca.crt"], currentCA)
-	})
-
-	t.Run("-new secret is deleted", func(t *testing.T) {
-		ensureSSLReconciled(t, r, cr, cr.Spec.PXC.SSLInternalSecretName)
-
-		inProgress, err := r.rotateSSLCertificate(ctx, cr, cr.Spec.PXC.SSLInternalSecretName)
-		require.NoError(t, err)
-		require.False(t, inProgress)
-
-		existing := &corev1.Secret{}
-		err = cl.Get(ctx, client.ObjectKeyFromObject(newSecret), existing)
-		require.Error(t, err)
-		require.True(t, k8serrors.IsNotFound(err))
-	})
+	// Step 4: -new secret is deleted
+	ensureSSLReconciled(t, r, cr, cr.Spec.PXC.SSLInternalSecretName)
+	inProgress, err = r.rotateSSLCertificate(ctx, cr, cr.Spec.PXC.SSLInternalSecretName)
+	require.NoError(t, err)
+	require.False(t, inProgress, "TLS rotation is in progress")
+	existing := &corev1.Secret{}
+	err = cl.Get(ctx, client.ObjectKeyFromObject(newSecret), existing)
+	require.Error(t, err)
+	require.True(t, k8serrors.IsNotFound(err), "New secret is not deleted")
 }
 
 func ensureSSLReconciled(t *testing.T, r *ReconcilePerconaXtraDBCluster, cr *api.PerconaXtraDBCluster, secretName string) {
