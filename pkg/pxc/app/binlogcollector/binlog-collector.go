@@ -352,8 +352,11 @@ func getStorageEnvs(cr *api.PerconaXtraDBCluster) ([]corev1.EnvVar, error) {
 		})
 	}
 
-	if env := bstorage.SkipBucketExistsEnv(); env != nil {
-		envs = append(envs, *env)
+	if storage.Type == api.BackupStorageS3 && storage.S3 != nil && storage.S3.SkipBucketExists {
+		envs = append(envs, corev1.EnvVar{
+			Name:  "S3_SKIP_BUCKET_EXISTS",
+			Value: "true",
+		})
 	}
 
 	return envs, nil

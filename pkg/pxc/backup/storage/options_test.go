@@ -26,16 +26,17 @@ func TestGetS3Options(t *testing.T) {
 	boolPtr := func(b bool) *bool { return &b }
 
 	tests := []struct {
-		name            string
-		destination     string
-		bucket          string
-		accessKeyID     string
-		secretAccessKey string
-		endpoint        string
-		forcePathStyle  bool
-		region          string
-		verifyTLS       *bool
-		storage         *api.BackupStorageSpec
+		name             string
+		destination      string
+		bucket           string
+		accessKeyID      string
+		secretAccessKey  string
+		endpoint         string
+		forcePathStyle   bool
+		skipBucketExists bool
+		region           string
+		verifyTLS        *bool
+		storage          *api.BackupStorageSpec
 
 		expected    *S3Options
 		expectedErr string
@@ -46,10 +47,11 @@ func TestGetS3Options(t *testing.T) {
 			endpoint: "some-endpoint",
 			region:   "some-region",
 			expected: &S3Options{
-				Endpoint:   "some-endpoint",
-				BucketName: "somebucket",
-				Region:     "some-region",
-				VerifyTLS:  true,
+				Endpoint:         "some-endpoint",
+				BucketName:       "somebucket",
+				Region:           "some-region",
+				VerifyTLS:        true,
+				SkipBucketExists: true,
 			},
 		},
 		{
@@ -58,30 +60,33 @@ func TestGetS3Options(t *testing.T) {
 			accessKeyID:     accessKeyID,
 			secretAccessKey: secretAccessKey,
 			expected: &S3Options{
-				BucketName:      "somebucket",
-				AccessKeyID:     accessKeyID,
-				SecretAccessKey: secretAccessKey,
-				VerifyTLS:       true,
-				Region:          "us-east-1",
+				BucketName:       "somebucket",
+				AccessKeyID:      accessKeyID,
+				SecretAccessKey:  secretAccessKey,
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
 			},
 		},
 		{
 			name:   "bucket without prefix",
 			bucket: "my-bucket",
 			expected: &S3Options{
-				BucketName: "my-bucket",
-				VerifyTLS:  true,
-				Region:     "us-east-1",
+				BucketName:       "my-bucket",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
 			},
 		},
 		{
 			name:   "bucket with prefix",
 			bucket: "my-bucket/prefix",
 			expected: &S3Options{
-				BucketName: "my-bucket",
-				Prefix:     "prefix/",
-				VerifyTLS:  true,
-				Region:     "us-east-1",
+				BucketName:       "my-bucket",
+				Prefix:           "prefix/",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
 			},
 		},
 		{
@@ -89,28 +94,31 @@ func TestGetS3Options(t *testing.T) {
 			destination: "s3://invalid-bucket/prefix/backup-name",
 			bucket:      "my-bucket",
 			expected: &S3Options{
-				BucketName: "my-bucket",
-				VerifyTLS:  true,
-				Region:     "us-east-1",
+				BucketName:       "my-bucket",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
 			},
 		},
 		{
 			name:        "destination without prefix",
 			destination: "s3://destination-bucket/backup-name",
 			expected: &S3Options{
-				BucketName: "destination-bucket",
-				VerifyTLS:  true,
-				Region:     "us-east-1",
+				BucketName:       "destination-bucket",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
 			},
 		},
 		{
 			name:        "destination with prefix",
 			destination: "s3://destination-bucket/prefix/backup-name",
 			expected: &S3Options{
-				BucketName: "destination-bucket",
-				Prefix:     "prefix/",
-				VerifyTLS:  true,
-				Region:     "us-east-1",
+				BucketName:       "destination-bucket",
+				Prefix:           "prefix/",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
 			},
 		},
 		{
@@ -122,9 +130,10 @@ func TestGetS3Options(t *testing.T) {
 			bucket:    "somebucket",
 			verifyTLS: boolPtr(false),
 			expected: &S3Options{
-				BucketName: "somebucket",
-				VerifyTLS:  false,
-				Region:     "us-east-1",
+				BucketName:       "somebucket",
+				VerifyTLS:        false,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
 			},
 		},
 		{
@@ -146,12 +155,13 @@ func TestGetS3Options(t *testing.T) {
 			endpoint:       "https://minio.example.com/my-bucket/prefix",
 			forcePathStyle: true,
 			expected: &S3Options{
-				Endpoint:       "https://minio.example.com",
-				BucketName:     "my-bucket",
-				Prefix:         "prefix/",
-				VerifyTLS:      true,
-				Region:         "us-east-1",
-				ForcePathStyle: true,
+				Endpoint:         "https://minio.example.com",
+				BucketName:       "my-bucket",
+				Prefix:           "prefix/",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				ForcePathStyle:   true,
+				SkipBucketExists: true,
 			},
 		},
 		{
@@ -160,12 +170,13 @@ func TestGetS3Options(t *testing.T) {
 			endpoint:       "minio.example.com/my-bucket/prefix",
 			forcePathStyle: true,
 			expected: &S3Options{
-				Endpoint:       "minio.example.com",
-				BucketName:     "my-bucket",
-				Prefix:         "prefix/",
-				VerifyTLS:      true,
-				Region:         "us-east-1",
-				ForcePathStyle: true,
+				Endpoint:         "minio.example.com",
+				BucketName:       "my-bucket",
+				Prefix:           "prefix/",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				ForcePathStyle:   true,
+				SkipBucketExists: true,
 			},
 		},
 		{
@@ -174,6 +185,64 @@ func TestGetS3Options(t *testing.T) {
 			endpoint:       "https://s3.example.com/%invalid",
 			forcePathStyle: true,
 			expectedErr:    `failed to get bucket and prefix: failed to parse endpointUrl: failed to parse endpointUrl: parse "https://s3.example.com/%invalid": invalid URL escape "%in"`,
+		},
+		{
+			name:             "skip bucket exists from backup status (no cluster)",
+			bucket:           "somebucket",
+			skipBucketExists: false, // backup snapshot says false…
+			expected: &S3Options{
+				BucketName:       "somebucket",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true, // …but cluster is nil so we assume true
+			},
+		},
+		{
+			name:   "skip bucket exists from cluster spec true",
+			bucket: "somebucket",
+			storage: &api.BackupStorageSpec{
+				S3: &api.BackupStorageS3Spec{
+					SkipBucketExists: true,
+				},
+			},
+			expected: &S3Options{
+				BucketName:       "somebucket",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
+			},
+		},
+		{
+			name:             "cluster spec wins over backup status snapshot",
+			bucket:           "somebucket",
+			skipBucketExists: true, // status snapshot says true…
+			storage: &api.BackupStorageSpec{
+				S3: &api.BackupStorageS3Spec{
+					SkipBucketExists: false,
+				},
+			},
+			expected: &S3Options{
+				BucketName:       "somebucket",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: false, // …but live cluster spec wins when cluster is present
+			},
+		},
+		{
+			name:             "cluster spec true overrides backup status snapshot false",
+			bucket:           "somebucket",
+			skipBucketExists: false, // status snapshot says false…
+			storage: &api.BackupStorageSpec{
+				S3: &api.BackupStorageS3Spec{
+					SkipBucketExists: true,
+				},
+			},
+			expected: &S3Options{
+				BucketName:       "somebucket",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true, // …live spec wins, going up
+			},
 		},
 	}
 
@@ -185,6 +254,7 @@ func TestGetS3Options(t *testing.T) {
 				Region:            tt.region,
 				EndpointURL:       tt.endpoint,
 				ForcePathStyle:    tt.forcePathStyle,
+				SkipBucketExists:  tt.skipBucketExists,
 			}, nil)
 
 			var cluster *api.PerconaXtraDBCluster

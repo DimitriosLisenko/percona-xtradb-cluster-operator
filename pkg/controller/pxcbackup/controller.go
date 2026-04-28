@@ -399,8 +399,11 @@ func (r *ReconcilePerconaXtraDBClusterBackup) createBackupJob(
 		})
 	}
 
-	if env := bstorage.SkipBucketExistsEnv(); env != nil && len(job.Spec.Template.Spec.Containers) > 0 {
-		job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, *env)
+	if storage.S3 != nil && storage.S3.SkipBucketExists && len(job.Spec.Template.Spec.Containers) > 0 {
+		job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
+			Name:  "S3_SKIP_BUCKET_EXISTS",
+			Value: "true",
+		})
 	}
 
 	// Set PerconaXtraDBClusterBackup instance as the owner and controller
@@ -543,7 +546,14 @@ func (r *ReconcilePerconaXtraDBClusterBackup) runS3BackupFinalizer(ctx context.C
 		return errors.Wrap(err, "failed to get secret")
 	}
 
-	opts, err := bstorage.GetOptionsFromBackup(ctx, r.client, nil, cr)
+	cluster, err := r.getCluster(ctx, cr)
+	if err != nil && !k8sErrors.IsNotFound(err) {
+		return errors.Wrap(err, "get cluster")
+	}
+	// cluster may be nil here if the PerconaXtraDBCluster CR has already been deleted;
+	// GetOptionsFromBackup falls back to SkipBucketExists=true in that case.
+
+	opts, err := bstorage.GetOptionsFromBackup(ctx, r.client, cluster, cr)
 	if err != nil {
 		return errors.Wrap(err, "get storage options")
 	}
@@ -568,7 +578,12 @@ func (r *ReconcilePerconaXtraDBClusterBackup) runAzureBackupFinalizer(ctx contex
 		return errors.New("azure storage is not specified")
 	}
 
-	opts, err := bstorage.GetOptionsFromBackup(ctx, r.client, nil, cr)
+	cluster, err := r.getCluster(ctx, cr)
+	if err != nil && !k8sErrors.IsNotFound(err) {
+		return errors.Wrap(err, "get cluster")
+	}
+
+	opts, err := bstorage.GetOptionsFromBackup(ctx, r.client, cluster, cr)
 	if err != nil {
 		return errors.Wrap(err, "get storage options")
 	}

@@ -47,13 +47,11 @@ spec:
           value: "false"
         - name: S3_WORKERS_LIMIT
           value: "10"
-        - name: S3_SKIP_BUCKET_EXISTS
-          value: "false"
         - name: MAX_CONCURRENT_RECONCILES
           value: "1"
         - name: PXCO_FEATURE_GATES
           value: ""
-        image: perconalab/percona-xtradb-cluster-operator:main
+        image: perconalab/percona-xtradb-cluster-operator:remove-head-bucket
         imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 3

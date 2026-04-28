@@ -23,7 +23,6 @@ import (
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/config"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/statefulset"
-	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/users"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/util"
 )
@@ -499,8 +498,39 @@ func restoreJobEnvs(
 		Value: strconv.FormatBool(verifyTLS),
 	})
 
-	if env := storage.SkipBucketExistsEnv(); env != nil {
-		envs = append(envs, *env)
+	skipBucketExists := false
+	if cluster.Spec.Backup != nil && len(cluster.Spec.Backup.Storages) > 0 {
+		if s, ok := cluster.Spec.Backup.Storages[bcp.Spec.StorageName]; ok && s.S3 != nil {
+			skipBucketExists = s.S3.SkipBucketExists
+		}
+	}
+	if bs := cr.Spec.BackupSource; bs != nil {
+		if bs.StorageName != "" && cluster.Spec.Backup != nil {
+			if s, ok := cluster.Spec.Backup.Storages[bs.StorageName]; ok && s.S3 != nil {
+				skipBucketExists = s.S3.SkipBucketExists
+			}
+		}
+		if bs.S3 != nil {
+			skipBucketExists = bs.S3.SkipBucketExists
+		}
+	}
+	if pitr {
+		if bs := cr.Spec.PITR.BackupSource; bs != nil {
+			if bs.StorageName != "" && cluster.Spec.Backup != nil {
+				if s, ok := cluster.Spec.Backup.Storages[bs.StorageName]; ok && s.S3 != nil {
+					skipBucketExists = s.S3.SkipBucketExists
+				}
+			}
+			if bs.S3 != nil {
+				skipBucketExists = bs.S3.SkipBucketExists
+			}
+		}
+	}
+	if skipBucketExists {
+		envs = append(envs, corev1.EnvVar{
+			Name:  "S3_SKIP_BUCKET_EXISTS",
+			Value: "true",
+		})
 	}
 
 	if features.Enabled(ctx, features.XtrabackupSidecar) {

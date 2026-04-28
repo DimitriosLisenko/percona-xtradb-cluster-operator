@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"os"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -12,22 +11,6 @@ import (
 	api "github.com/percona/percona-xtradb-cluster-operator/pkg/apis/pxc/v1"
 	xbscapi "github.com/percona/percona-xtradb-cluster-operator/pkg/xtrabackup/api"
 )
-
-// SkipBucketExistsEnvVar is the environment variable name that controls
-// whether to skip S3 bucket existence checks (HeadBucket API calls).
-const SkipBucketExistsEnvVar = "S3_SKIP_BUCKET_EXISTS"
-
-// SkipBucketExistsEnv returns a corev1.EnvVar for propagating the skip-bucket-exists
-// flag to child pods, or nil if the flag is not enabled on the operator.
-func SkipBucketExistsEnv() *corev1.EnvVar {
-	if os.Getenv(SkipBucketExistsEnvVar) == "true" {
-		return &corev1.EnvVar{
-			Name:  SkipBucketExistsEnvVar,
-			Value: "true",
-		}
-	}
-	return nil
-}
 
 type Options interface {
 	Type() api.BackupStorageType
@@ -229,7 +212,7 @@ func getS3Options(
 		VerifyTLS:        verify,
 		CABundle:         caBundle,
 		ForcePathStyle:   s3.ForcePathStyle,
-		SkipBucketExists: os.Getenv(SkipBucketExistsEnvVar) == "true",
+		SkipBucketExists: s3.SkipBucketExists,
 	}, nil
 }
 
@@ -286,6 +269,19 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 		}
 	}
 
+	skipBucketExists := backup.Status.S3.SkipBucketExists
+	if cluster != nil {
+		if cluster.Spec.Backup != nil && len(cluster.Spec.Backup.Storages) > 0 {
+			if s, ok := cluster.Spec.Backup.Storages[backup.Spec.StorageName]; ok && s.S3 != nil {
+				skipBucketExists = s.S3.SkipBucketExists
+			}
+		}
+	} else {
+		// Cluster CR is gone (e.g. backup finalizer running after cluster deletion).
+		// Assume SkipBucketExists=true so cleanup proceeds without s3:ListBucket permission.
+		skipBucketExists = true
+	}
+
 	return &S3Options{
 		Endpoint:         endpoint,
 		AccessKeyID:      accessKeyID,
@@ -297,7 +293,7 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 		VerifyTLS:        verifyTLS,
 		CABundle:         caBundle,
 		ForcePathStyle:   backup.Status.S3.ForcePathStyle,
-		SkipBucketExists: os.Getenv(SkipBucketExistsEnvVar) == "true",
+		SkipBucketExists: skipBucketExists,
 	}, nil
 }
 
