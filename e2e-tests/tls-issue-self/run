@@ -7,13 +7,12 @@ test_dir=$(realpath $(dirname $0))
 
 set_debug
 
-# Generates internal TLS with cfssl and creates ${cluster}-ssl-internal-new in the target namespace.
-# Sets s_new in the global scope to that secret name for the caller.
-create_internal_tls_new_secret() {
+# Generates internal TLS with cfssl and creates the given secret name in the target namespace.
+create_tls_secret() {
 	local cluster_name=$1
 	local ns=$2
+	local secret_name=$3
 	local rot_dir="${tmp_dir}/tls-rot-ssl-internal-new"
-	s_new="${cluster_name}-ssl-internal-new"
 	mkdir -p "$rot_dir"
 	(
 		cd "$rot_dir"
@@ -42,8 +41,8 @@ EOF
 }
 EOF
 	)
-	kubectl_bin delete secret "$s_new" -n "$ns" --ignore-not-found=true
-	kubectl_bin create secret generic "$s_new" -n "$ns" \
+	kubectl_bin delete secret "$secret_name" -n "$ns" --ignore-not-found=true
+	kubectl_bin create secret generic "$secret_name" -n "$ns" \
 		--from-file=tls.crt="${rot_dir}/server.pem" \
 		--from-file=tls.key="${rot_dir}/server-key.pem" \
 		--from-file=ca.crt="${rot_dir}/ca.pem" \
@@ -103,13 +102,14 @@ main() {
 
 	desc 'check tls rotation (internal secret via -new)'
 
-	create_internal_tls_new_secret "$cluster" "$namespace"
+	local internal_tls_new_secret="${cluster}-ssl-internal-new"
+	create_tls_secret "$cluster" "$namespace" "$internal_tls_new_secret"
 
 	desc 'wait for internal TLS rotation'
 	rotate_deadline=$(($(date +%s) + 900)) # 15 minutes
-	while kubectl_bin get secret "$s_new" -n "$namespace" &>/dev/null; do
+	while kubectl_bin get secret "$internal_tls_new_secret" -n "$namespace" &>/dev/null; do
 		if [ "$(date +%s)" -ge "$rotate_deadline" ]; then
-			echo "timeout: ${s_new} was not removed after internal TLS rotation (waited 5m)"
+			echo "timeout: ${internal_tls_new_secret} was not removed after internal TLS rotation (waited 5m)"
 			exit 1
 		fi
 		probe=$(run_mysql "SELECT 1;" "-h ${cluster}-proxysql -uroot -proot_password")
