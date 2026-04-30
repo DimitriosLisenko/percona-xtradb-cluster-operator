@@ -35,7 +35,7 @@ import (
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/binlogcollector"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup"
-	bstorage "github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/version"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/xtrabackup"
 )
@@ -399,15 +399,6 @@ func (r *ReconcilePerconaXtraDBClusterBackup) createBackupJob(
 		})
 	}
 
-	// SkipBucketExists is read live from the cluster spec here; the snapshot path
-	// in pkg/pxc/backup/storage/options.go is the authoritative resolution model.
-	if storage.S3 != nil && storage.S3.SkipBucketExists {
-		job.Spec.Template.Spec.Containers[0].Env = append(job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
-			Name:  "S3_SKIP_BUCKET_EXISTS",
-			Value: "true",
-		})
-	}
-
 	// Set PerconaXtraDBClusterBackup instance as the owner and controller
 	if err := k8s.SetControllerReference(cr, job, r.scheme); err != nil {
 		return nil, errors.Wrap(err, "job/setControllerReference")
@@ -548,18 +539,11 @@ func (r *ReconcilePerconaXtraDBClusterBackup) runS3BackupFinalizer(ctx context.C
 		return errors.Wrap(err, "failed to get secret")
 	}
 
-	cluster, err := r.getCluster(ctx, cr)
-	if err != nil && !k8sErrors.IsNotFound(err) {
-		return errors.Wrap(err, "get cluster")
-	}
-	// cluster may be nil here if the PerconaXtraDBCluster CR has already been deleted;
-	// GetOptionsFromBackup falls back to SkipBucketExists=true in that case.
-
-	opts, err := bstorage.GetOptionsFromBackup(ctx, r.client, cluster, cr)
+	opts, err := storage.GetOptionsFromBackup(ctx, r.client, nil, cr)
 	if err != nil {
 		return errors.Wrap(err, "get storage options")
 	}
-	storage, err := bstorage.NewClient(ctx, opts)
+	storage, err := storage.NewClient(ctx, opts)
 	if err != nil {
 		return errors.Wrap(err, "new s3 storage")
 	}
@@ -580,16 +564,11 @@ func (r *ReconcilePerconaXtraDBClusterBackup) runAzureBackupFinalizer(ctx contex
 		return errors.New("azure storage is not specified")
 	}
 
-	cluster, err := r.getCluster(ctx, cr)
-	if err != nil && !k8sErrors.IsNotFound(err) {
-		return errors.Wrap(err, "get cluster")
-	}
-
-	opts, err := bstorage.GetOptionsFromBackup(ctx, r.client, cluster, cr)
+	opts, err := storage.GetOptionsFromBackup(ctx, r.client, nil, cr)
 	if err != nil {
 		return errors.Wrap(err, "get storage options")
 	}
-	azureStorage, err := bstorage.NewClient(ctx, opts)
+	azureStorage, err := storage.NewClient(ctx, opts)
 	if err != nil {
 		return errors.Wrap(err, "new azure storage")
 	}
@@ -627,7 +606,7 @@ func (r *ReconcilePerconaXtraDBClusterBackup) runReleaseLockFinalizer(ctx contex
 	return errors.Wrap(err, "release backup lock")
 }
 
-func removeBackupObjects(ctx context.Context, s bstorage.Storage, destination string) func() error {
+func removeBackupObjects(ctx context.Context, s storage.Storage, destination string) func() error {
 	return func() error {
 		blobs, err := s.ListObjects(ctx, destination)
 		if err != nil {
@@ -638,7 +617,7 @@ func removeBackupObjects(ctx context.Context, s bstorage.Storage, destination st
 				return errors.Wrapf(err, "delete object %s", blob)
 			}
 		}
-		if err := s.DeleteObject(ctx, strings.TrimSuffix(destination, "/")+".md5"); err != nil && err != bstorage.ErrObjectNotFound {
+		if err := s.DeleteObject(ctx, strings.TrimSuffix(destination, "/")+".md5"); err != nil && err != storage.ErrObjectNotFound {
 			return errors.Wrapf(err, "delete object %s", strings.TrimSuffix(destination, "/")+".md5")
 		}
 		destination = strings.TrimSuffix(destination, "/") + ".sst_info/"
@@ -651,7 +630,7 @@ func removeBackupObjects(ctx context.Context, s bstorage.Storage, destination st
 				return errors.Wrapf(err, "delete object %s", blob)
 			}
 		}
-		if err := s.DeleteObject(ctx, strings.TrimSuffix(destination, "/")+".md5"); err != nil && err != bstorage.ErrObjectNotFound {
+		if err := s.DeleteObject(ctx, strings.TrimSuffix(destination, "/")+".md5"); err != nil && err != storage.ErrObjectNotFound {
 			return errors.Wrapf(err, "delete object %s", strings.TrimSuffix(destination, "/")+".md5")
 		}
 		return nil

@@ -23,7 +23,7 @@ import (
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/statefulset"
-	bstorage "github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
+	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/users"
 )
 
@@ -307,6 +307,12 @@ func getStorageEnvs(cr *api.PerconaXtraDBCluster) ([]corev1.EnvVar, error) {
 				Value: "true",
 			})
 		}
+		if storage.S3.SkipBucketExists {
+			envs = append(envs, corev1.EnvVar{
+				Name:  "S3_SKIP_BUCKET_EXISTS",
+				Value: "true",
+			})
+		}
 	case api.BackupStorageAzure:
 		if storage.Azure == nil {
 			return nil, errors.New("azure storage is not specified")
@@ -349,15 +355,6 @@ func getStorageEnvs(cr *api.PerconaXtraDBCluster) ([]corev1.EnvVar, error) {
 		envs = append(envs, corev1.EnvVar{
 			Name:  "VERIFY_TLS",
 			Value: verifyTLS,
-		})
-	}
-
-	// SkipBucketExists is read live from the cluster spec here; the snapshot path
-	// in pkg/pxc/backup/storage/options.go is the authoritative resolution model.
-	if storage.Type == api.BackupStorageS3 && storage.S3 != nil && storage.S3.SkipBucketExists {
-		envs = append(envs, corev1.EnvVar{
-			Name:  "S3_SKIP_BUCKET_EXISTS",
-			Value: "true",
 		})
 	}
 
@@ -438,12 +435,12 @@ func InvalidateCache(
 ) error {
 	log := logf.FromContext(ctx)
 
-	opts, err := bstorage.GetOptions(ctx, cl, cluster, cluster.Spec.Backup.PITR.StorageName)
+	opts, err := storage.GetOptions(ctx, cl, cluster, cluster.Spec.Backup.PITR.StorageName)
 	if err != nil {
 		return errors.Wrap(err, "get pitr storage options")
 	}
 
-	stg, err := bstorage.NewClient(ctx, opts)
+	stg, err := storage.NewClient(ctx, opts)
 	if err != nil {
 		return errors.Wrap(err, "new storage client")
 	}

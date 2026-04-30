@@ -49,7 +49,6 @@ message BackupConfig {
     optional S3Config s3 = 5;
     optional GCSConfig gcs = 6;
     optional AzureConfig azure = 7;
-    bool skip_bucket_exists = 8;
 }
 
 message S3Config {
@@ -61,6 +60,7 @@ message S3Config {
     string storage_class = 6;
     string session_token = 7;
     bool force_path_style = 8;
+    bool skip_bucket_exists = 9;
 }
 
 message GCSConfig {

@@ -95,7 +95,6 @@ func getRequestObject() *xbscapi.CreateBackupRequest {
 	req.BackupName = os.Getenv("BACKUP_NAME")
 	req.BackupConfig.Destination = os.Getenv("BACKUP_DEST")
 	req.BackupConfig.VerifyTls = os.Getenv("VERIFY_TLS") == "true"
-	req.BackupConfig.SkipBucketExists = os.Getenv("S3_SKIP_BUCKET_EXISTS") == "true"
 	req.BackupConfig.ContainerOptions = &xbscapi.ContainerOptions{
 		Args: &xbscapi.BackupContainerArgs{
 			Xtrabackup: strings.Fields(os.Getenv("XB_EXTRA_ARGS")),
@@ -126,14 +125,15 @@ func getRequestObject() *xbscapi.CreateBackupRequest {
 
 func setS3Config(req *xbscapi.CreateBackupRequest) {
 	req.BackupConfig.S3 = &xbscapi.S3Config{
-		Bucket:         os.Getenv("S3_BUCKET"),
-		Region:         os.Getenv("DEFAULT_REGION"),
-		EndpointUrl:    os.Getenv("ENDPOINT"),
-		AccessKey:      os.Getenv("ACCESS_KEY_ID"),
-		SecretKey:      os.Getenv("SECRET_ACCESS_KEY"),
-		SessionToken:   os.Getenv("S3_SESSION_TOKEN"),
-		StorageClass:   os.Getenv("S3_STORAGE_CLASS"),
-		ForcePathStyle: os.Getenv("S3_FORCE_PATH") == "true",
+		Bucket:           os.Getenv("S3_BUCKET"),
+		Region:           os.Getenv("DEFAULT_REGION"),
+		EndpointUrl:      os.Getenv("ENDPOINT"),
+		AccessKey:        os.Getenv("ACCESS_KEY_ID"),
+		SecretKey:        os.Getenv("SECRET_ACCESS_KEY"),
+		SessionToken:     os.Getenv("S3_SESSION_TOKEN"),
+		StorageClass:     os.Getenv("S3_STORAGE_CLASS"),
+		ForcePathStyle:   os.Getenv("S3_FORCE_PATH") == "true",
+		SkipBucketExists: os.Getenv("S3_SKIP_BUCKET_EXISTS") == "true",
 	}
 }
 

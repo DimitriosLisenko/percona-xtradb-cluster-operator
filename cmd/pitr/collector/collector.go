@@ -97,19 +97,19 @@ type Config struct {
 	BufferSize         int64   `env:"BUFFER_SIZE"`
 	CollectSpanSec     float64 `env:"COLLECT_SPAN_SEC" envDefault:"60"`
 	VerifyTLS          bool    `env:"VERIFY_TLS" envDefault:"true"`
-	SkipBucketExists   bool    `env:"S3_SKIP_BUCKET_EXISTS" envDefault:"false"`
 	TimeoutSeconds     float64 `env:"TIMEOUT_SECONDS" envDefault:"60"`
 	GTIDCacheKey       string  `env:"GTID_CACHE_KEY,required"`
 }
 
 type BackupS3 struct {
-	Endpoint     string `env:"ENDPOINT" envDefault:"s3.amazonaws.com"`
-	AccessKeyID  string `env:"ACCESS_KEY_ID,required"`
-	AccessKey    string `env:"SECRET_ACCESS_KEY,required"`
-	SessionToken string `env:"S3_SESSION_TOKEN"`
-	BucketURL    string `env:"S3_BUCKET_URL,required"`
-	Region       string `env:"DEFAULT_REGION,required"`
-	ForcePath    bool   `env:"S3_FORCE_PATH"`
+	Endpoint         string `env:"ENDPOINT" envDefault:"s3.amazonaws.com"`
+	AccessKeyID      string `env:"ACCESS_KEY_ID,required"`
+	AccessKey        string `env:"SECRET_ACCESS_KEY,required"`
+	SessionToken     string `env:"S3_SESSION_TOKEN"`
+	BucketURL        string `env:"S3_BUCKET_URL,required"`
+	Region           string `env:"DEFAULT_REGION,required"`
+	ForcePath        bool   `env:"S3_FORCE_PATH"`
+	SkipBucketExists bool   `env:"S3_SKIP_BUCKET_EXISTS"`
 }
 
 type BackupAzure struct {
@@ -147,7 +147,7 @@ func New(ctx context.Context, c Config) (*Collector, error) {
 			return nil, errors.Wrap(err, "read CA bundle file")
 		}
 
-		s, err = storage.NewS3(ctx, c.BackupStorageS3.Endpoint, c.BackupStorageS3.AccessKeyID, c.BackupStorageS3.AccessKey, c.BackupStorageS3.SessionToken, bucketArr[0], prefix, c.BackupStorageS3.Region, c.VerifyTLS, caBundle, c.BackupStorageS3.ForcePath, c.SkipBucketExists)
+		s, err = storage.NewS3(ctx, c.BackupStorageS3.Endpoint, c.BackupStorageS3.AccessKeyID, c.BackupStorageS3.AccessKey, c.BackupStorageS3.SessionToken, bucketArr[0], prefix, c.BackupStorageS3.Region, c.VerifyTLS, caBundle, c.BackupStorageS3.ForcePath, c.BackupStorageS3.SkipBucketExists)
 		if err != nil {
 			return nil, errors.Wrap(err, "new storage manager")
 		}

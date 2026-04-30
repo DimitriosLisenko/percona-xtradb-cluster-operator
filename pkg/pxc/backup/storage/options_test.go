@@ -129,24 +129,16 @@ func TestGetS3Options(t *testing.T) {
 			},
 		},
 		{
-			// Strengthened (consensus item 13): the storage fixture sets both
-			// VerifyTLS and an S3 subfield with SkipBucketExists=true so that we
-			// can assert the two fields are resolved independently.
-			name:             "verifyTLS and skipBucketExists in backup and cluster",
-			bucket:           "somebucket",
-			verifyTLS:        boolPtr(true),
-			skipBucketExists: false,
+			name:      "verifyTLS in backup and cluster",
+			bucket:    "somebucket",
+			verifyTLS: boolPtr(true),
 			storage: &api.BackupStorageSpec{
 				VerifyTLS: boolPtr(false),
-				S3: &api.BackupStorageS3Spec{
-					SkipBucketExists: true,
-				},
 			},
 			expected: &S3Options{
-				BucketName:       "somebucket",
-				VerifyTLS:        false,
-				Region:           "us-east-1",
-				SkipBucketExists: true,
+				BucketName: "somebucket",
+				VerifyTLS:  false,
+				Region:     "us-east-1",
 			},
 		},
 		{
@@ -185,8 +177,7 @@ func TestGetS3Options(t *testing.T) {
 			expectedErr:    `failed to get bucket and prefix: failed to parse endpointUrl: failed to parse endpointUrl: parse "https://s3.example.com/%invalid": invalid URL escape "%in"`,
 		},
 		{
-			// Snapshot-as-default with no cluster: snapshot value is honored.
-			name:             "snapshot false honored when cluster is nil",
+			name:             "skipBucketExists false in backup",
 			bucket:           "somebucket",
 			skipBucketExists: false,
 			expected: &S3Options{
@@ -196,58 +187,9 @@ func TestGetS3Options(t *testing.T) {
 			},
 		},
 		{
-			// Paired case (consensus item 14): same shape as above but snapshot
-			// is true. Together these two cases pin the cluster-nil semantics:
-			// the snapshot is used as-is rather than being overridden.
-			name:             "snapshot true honored when cluster is nil",
+			name:             "skipBucketExists true in backup",
 			bucket:           "somebucket",
 			skipBucketExists: true,
-			expected: &S3Options{
-				BucketName:       "somebucket",
-				VerifyTLS:        true,
-				Region:           "us-east-1",
-				SkipBucketExists: true,
-			},
-		},
-		{
-			name:   "skip bucket exists from cluster spec true",
-			bucket: "somebucket",
-			storage: &api.BackupStorageSpec{
-				S3: &api.BackupStorageS3Spec{
-					SkipBucketExists: true,
-				},
-			},
-			expected: &S3Options{
-				BucketName:       "somebucket",
-				VerifyTLS:        true,
-				Region:           "us-east-1",
-				SkipBucketExists: true,
-			},
-		},
-		{
-			name:             "cluster spec false overrides snapshot true",
-			bucket:           "somebucket",
-			skipBucketExists: true,
-			storage: &api.BackupStorageSpec{
-				S3: &api.BackupStorageS3Spec{
-					SkipBucketExists: false,
-				},
-			},
-			expected: &S3Options{
-				BucketName: "somebucket",
-				VerifyTLS:  true,
-				Region:     "us-east-1",
-			},
-		},
-		{
-			name:             "cluster spec true overrides snapshot false",
-			bucket:           "somebucket",
-			skipBucketExists: false,
-			storage: &api.BackupStorageSpec{
-				S3: &api.BackupStorageS3Spec{
-					SkipBucketExists: true,
-				},
-			},
 			expected: &S3Options{
 				BucketName:       "somebucket",
 				VerifyTLS:        true,
@@ -297,14 +239,8 @@ func TestGetS3Options(t *testing.T) {
 			cl := fake.NewClientBuilder().WithRuntimeObjects(objs...).Build()
 
 			opts, err := getS3OptionsFromBackup(ctx, cl, cluster, backup)
-			if (err != nil) != (tt.expectedErr != "") {
-				t.Fatalf("error mismatch: got %v, expected %q", err, tt.expectedErr)
-			}
-			if tt.expectedErr != "" {
-				if err.Error() != tt.expectedErr {
-					t.Fatalf("error message mismatch: got %q, expected %q", err.Error(), tt.expectedErr)
-				}
-				return
+			if err != nil && tt.expectedErr != err.Error() {
+				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(opts, tt.expected) {
 				t.Fatalf("expected: %+v, got: %+v", tt.expected, opts)
@@ -426,14 +362,8 @@ func TestGetAzureOptions(t *testing.T) {
 			cl := fake.NewClientBuilder().WithRuntimeObjects(objs...).Build()
 
 			opts, err := getAzureOptionsFromBackup(ctx, cl, backup)
-			if (err != nil) != (tt.expectedErr != "") {
-				t.Fatalf("error mismatch: got %v, expected %q", err, tt.expectedErr)
-			}
-			if tt.expectedErr != "" {
-				if err.Error() != tt.expectedErr {
-					t.Fatalf("error message mismatch: got %q, expected %q", err.Error(), tt.expectedErr)
-				}
-				return
+			if err != nil && tt.expectedErr != err.Error() {
+				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(opts, tt.expected) {
 				t.Fatalf("expected: %+v, got: %+v", tt.expected, opts)

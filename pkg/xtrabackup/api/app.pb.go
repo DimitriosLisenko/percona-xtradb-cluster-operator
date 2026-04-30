@@ -379,7 +379,6 @@ type BackupConfig struct {
 	S3               *S3Config              `protobuf:"bytes,5,opt,name=s3,proto3,oneof" json:"s3,omitempty"`
 	Gcs              *GCSConfig             `protobuf:"bytes,6,opt,name=gcs,proto3,oneof" json:"gcs,omitempty"`
 	Azure            *AzureConfig           `protobuf:"bytes,7,opt,name=azure,proto3,oneof" json:"azure,omitempty"`
-	SkipBucketExists bool                   `protobuf:"varint,8,opt,name=skip_bucket_exists,json=skipBucketExists,proto3" json:"skip_bucket_exists,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -463,25 +462,19 @@ func (x *BackupConfig) GetAzure() *AzureConfig {
 	return nil
 }
 
-func (x *BackupConfig) GetSkipBucketExists() bool {
-	if x != nil {
-		return x.SkipBucketExists
-	}
-	return false
-}
-
 type S3Config struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Bucket         string                 `protobuf:"bytes,1,opt,name=bucket,proto3" json:"bucket,omitempty"`
-	Region         string                 `protobuf:"bytes,2,opt,name=region,proto3" json:"region,omitempty"`
-	EndpointUrl    string                 `protobuf:"bytes,3,opt,name=endpoint_url,json=endpointUrl,proto3" json:"endpoint_url,omitempty"`
-	AccessKey      string                 `protobuf:"bytes,4,opt,name=access_key,json=accessKey,proto3" json:"access_key,omitempty"`
-	SecretKey      string                 `protobuf:"bytes,5,opt,name=secret_key,json=secretKey,proto3" json:"secret_key,omitempty"`
-	StorageClass   string                 `protobuf:"bytes,6,opt,name=storage_class,json=storageClass,proto3" json:"storage_class,omitempty"`
-	SessionToken   string                 `protobuf:"bytes,7,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
-	ForcePathStyle bool                   `protobuf:"varint,8,opt,name=force_path_style,json=forcePathStyle,proto3" json:"force_path_style,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Bucket           string                 `protobuf:"bytes,1,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	Region           string                 `protobuf:"bytes,2,opt,name=region,proto3" json:"region,omitempty"`
+	EndpointUrl      string                 `protobuf:"bytes,3,opt,name=endpoint_url,json=endpointUrl,proto3" json:"endpoint_url,omitempty"`
+	AccessKey        string                 `protobuf:"bytes,4,opt,name=access_key,json=accessKey,proto3" json:"access_key,omitempty"`
+	SecretKey        string                 `protobuf:"bytes,5,opt,name=secret_key,json=secretKey,proto3" json:"secret_key,omitempty"`
+	StorageClass     string                 `protobuf:"bytes,6,opt,name=storage_class,json=storageClass,proto3" json:"storage_class,omitempty"`
+	SessionToken     string                 `protobuf:"bytes,7,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
+	ForcePathStyle   bool                   `protobuf:"varint,8,opt,name=force_path_style,json=forcePathStyle,proto3" json:"force_path_style,omitempty"`
+	SkipBucketExists bool                   `protobuf:"varint,9,opt,name=skip_bucket_exists,json=skipBucketExists,proto3" json:"skip_bucket_exists,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *S3Config) Reset() {
@@ -566,6 +559,13 @@ func (x *S3Config) GetSessionToken() string {
 func (x *S3Config) GetForcePathStyle() bool {
 	if x != nil {
 		return x.ForcePathStyle
+	}
+	return false
+}
+
+func (x *S3Config) GetSkipBucketExists() bool {
+	if x != nil {
+		return x.SkipBucketExists
 	}
 	return false
 }
@@ -906,7 +906,7 @@ const file_app_proto_rawDesc = "" +
 	"\vbackup_name\x18\x01 \x01(\tR\n" +
 	"backupName\x126\n" +
 	"\rbackup_config\x18\x02 \x01(\v2\x11.api.BackupConfigR\fbackupConfig\"\x16\n" +
-	"\x14DeleteBackupResponse\"\xfe\x02\n" +
+	"\x14DeleteBackupResponse\"\xd0\x02\n" +
 	"\fBackupConfig\x12 \n" +
 	"\vdestination\x18\x01 \x01(\tR\vdestination\x12*\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x16.api.BackupStorageTypeR\x04type\x12\x1d\n" +
@@ -915,11 +915,10 @@ const file_app_proto_rawDesc = "" +
 	"\x11container_options\x18\x04 \x01(\v2\x15.api.ContainerOptionsR\x10containerOptions\x12\"\n" +
 	"\x02s3\x18\x05 \x01(\v2\r.api.S3ConfigH\x00R\x02s3\x88\x01\x01\x12%\n" +
 	"\x03gcs\x18\x06 \x01(\v2\x0e.api.GCSConfigH\x01R\x03gcs\x88\x01\x01\x12+\n" +
-	"\x05azure\x18\a \x01(\v2\x10.api.AzureConfigH\x02R\x05azure\x88\x01\x01\x12,\n" +
-	"\x12skip_bucket_exists\x18\b \x01(\bR\x10skipBucketExistsB\x05\n" +
+	"\x05azure\x18\a \x01(\v2\x10.api.AzureConfigH\x02R\x05azure\x88\x01\x01B\x05\n" +
 	"\x03_s3B\x06\n" +
 	"\x04_gcsB\b\n" +
-	"\x06_azure\"\x8f\x02\n" +
+	"\x06_azure\"\xbd\x02\n" +
 	"\bS3Config\x12\x16\n" +
 	"\x06bucket\x18\x01 \x01(\tR\x06bucket\x12\x16\n" +
 	"\x06region\x18\x02 \x01(\tR\x06region\x12!\n" +
@@ -930,7 +929,8 @@ const file_app_proto_rawDesc = "" +
 	"secret_key\x18\x05 \x01(\tR\tsecretKey\x12#\n" +
 	"\rstorage_class\x18\x06 \x01(\tR\fstorageClass\x12#\n" +
 	"\rsession_token\x18\a \x01(\tR\fsessionToken\x12(\n" +
-	"\x10force_path_style\x18\b \x01(\bR\x0eforcePathStyle\"\xa9\x01\n" +
+	"\x10force_path_style\x18\b \x01(\bR\x0eforcePathStyle\x12,\n" +
+	"\x12skip_bucket_exists\x18\t \x01(\bR\x10skipBucketExists\"\xa9\x01\n" +
 	"\tGCSConfig\x12\x16\n" +
 	"\x06bucket\x18\x01 \x01(\tR\x06bucket\x12!\n" +
 	"\fendpoint_url\x18\x02 \x01(\tR\vendpointUrl\x12#\n" +

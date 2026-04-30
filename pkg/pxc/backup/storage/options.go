@@ -32,25 +32,6 @@ func GetOptions(ctx context.Context, cl client.Client, cluster *api.PerconaXtraD
 	}
 }
 
-// GetOptionsFromBackup builds the storage Options used for backup-driven
-// operations such as listing or deleting backup objects (e.g. from a backup
-// finalizer).
-//
-// The S3 SkipBucketExists field has four injection sites in the codebase that
-// each follow a different resolution rule, intentionally tied to the lifecycle
-// of the consumer:
-//
-//   - This function (snapshot path): defaults to backup.Status.S3.SkipBucketExists,
-//     overridden by cluster.Spec.Backup.Storages[name].S3 whenever that storage
-//     entry has an S3 block. The cluster CR may be nil during finalizer cleanup;
-//     in that case the snapshot is the only source of truth.
-//   - createBackupJob (pkg/controller/pxcbackup): live cluster spec only — the
-//     backup is being created, no snapshot exists yet.
-//   - PITR binlog collector (pkg/pxc/app/binlogcollector): live cluster spec
-//     only — a continuous cluster-streaming process, not tied to any backup.
-//   - restoreJobEnvs (pkg/pxc/backup/restore.go): chained spec lookup with
-//     inline BackupSource and PITR.BackupSource overrides; see
-//     resolveSkipBucketExists for the full precedence chain.
 func GetOptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.PerconaXtraDBCluster, backup *api.PerconaXtraDBClusterBackup) (Options, error) {
 	switch {
 	case backup.Status.S3 != nil:
@@ -74,7 +55,7 @@ func GetOptionsFromBackupConfig(cfg *xbscapi.BackupConfig) (Options, error) {
 			Region:           cfg.S3.Region,
 			VerifyTLS:        cfg.VerifyTls,
 			ForcePathStyle:   cfg.S3.ForcePathStyle,
-			SkipBucketExists: cfg.SkipBucketExists,
+			SkipBucketExists: cfg.S3.SkipBucketExists,
 		}, nil
 	case xbscapi.BackupStorageType_AZURE:
 		return &AzureOptions{
@@ -288,17 +269,6 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 		}
 	}
 
-	// SkipBucketExists resolution: snapshot is the default; the live cluster spec
-	// overrides whenever the storage entry has an S3 block. When the cluster CR
-	// is gone (e.g. backup finalizer running after cluster deletion) the snapshot
-	// is the only source of truth, so it is honored as-is.
-	skipBucketExists := backup.Status.S3.SkipBucketExists
-	if cluster != nil && cluster.Spec.Backup != nil && len(cluster.Spec.Backup.Storages) > 0 {
-		if s, ok := cluster.Spec.Backup.Storages[backup.Spec.StorageName]; ok && s.S3 != nil {
-			skipBucketExists = s.S3.SkipBucketExists
-		}
-	}
-
 	return &S3Options{
 		Endpoint:         endpoint,
 		AccessKeyID:      accessKeyID,
@@ -310,25 +280,23 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 		VerifyTLS:        verifyTLS,
 		CABundle:         caBundle,
 		ForcePathStyle:   backup.Status.S3.ForcePathStyle,
-		SkipBucketExists: skipBucketExists,
+		SkipBucketExists: backup.Status.S3.SkipBucketExists,
 	}, nil
 }
 
 var _ = Options(new(S3Options))
 
 type S3Options struct {
-	Endpoint        string
-	AccessKeyID     string
-	SecretAccessKey string
-	SessionToken    string
-	BucketName      string
-	Prefix          string
-	Region          string
-	VerifyTLS       bool
-	CABundle        []byte
-	ForcePathStyle  bool
-	// SkipBucketExists is the resolved value, with the resolution model
-	// described on GetOptionsFromBackup.
+	Endpoint         string
+	AccessKeyID      string
+	SecretAccessKey  string
+	SessionToken     string
+	BucketName       string
+	Prefix           string
+	Region           string
+	VerifyTLS        bool
+	CABundle         []byte
+	ForcePathStyle   bool
 	SkipBucketExists bool
 }
 
