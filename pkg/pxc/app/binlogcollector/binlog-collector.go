@@ -352,8 +352,13 @@ func getStorageEnvs(cr *api.PerconaXtraDBCluster) ([]corev1.EnvVar, error) {
 		})
 	}
 
-	if env := bstorage.SkipBucketExistsEnv(); env != nil {
-		envs = append(envs, *env)
+	// SkipBucketExists is read live from the cluster spec here; the snapshot path
+	// in pkg/pxc/backup/storage/options.go is the authoritative resolution model.
+	if storage.Type == api.BackupStorageS3 && storage.S3 != nil && storage.S3.SkipBucketExists {
+		envs = append(envs, corev1.EnvVar{
+			Name:  "S3_SKIP_BUCKET_EXISTS",
+			Value: "true",
+		})
 	}
 
 	return envs, nil

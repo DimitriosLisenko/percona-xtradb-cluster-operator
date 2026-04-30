@@ -186,3 +186,174 @@ func TestPrepareJob(t *testing.T) {
 	}
 	assert.ElementsMatch(t, job.Spec.Template.Spec.Containers[0].VolumeMounts, expectedVolumeMounts)
 }
+
+func TestResolveSkipBucketExists(t *testing.T) {
+	const primaryStorage = "primary"
+	const altStorage = "alt"
+
+	clusterWith := func(storages map[string]bool) *pxcv1.PerconaXtraDBCluster {
+		spec := &pxcv1.BackupSpec{Storages: map[string]*pxcv1.BackupStorageSpec{}}
+		for name, v := range storages {
+			spec.Storages[name] = &pxcv1.BackupStorageSpec{
+				S3: &pxcv1.BackupStorageS3Spec{SkipBucketExists: v},
+			}
+		}
+		return &pxcv1.PerconaXtraDBCluster{Spec: pxcv1.PerconaXtraDBClusterSpec{Backup: spec}}
+	}
+
+	tests := []struct {
+		name    string
+		cluster *pxcv1.PerconaXtraDBCluster
+		cr      *pxcv1.PerconaXtraDBClusterRestore
+		bcp     *pxcv1.PerconaXtraDBClusterBackup
+		pitr    bool
+		want    bool
+	}{
+		{
+			name:    "no overrides, cluster spec wins (true)",
+			cluster: clusterWith(map[string]bool{primaryStorage: true}),
+			cr:      &pxcv1.PerconaXtraDBClusterRestore{},
+			want:    true,
+		},
+		{
+			name:    "no overrides, cluster spec wins (false)",
+			cluster: clusterWith(map[string]bool{primaryStorage: false}),
+			cr:      &pxcv1.PerconaXtraDBClusterRestore{},
+			want:    false,
+		},
+		{
+			name:    "cluster nil returns false",
+			cluster: nil,
+			cr:      &pxcv1.PerconaXtraDBClusterRestore{},
+			want:    false,
+		},
+		{
+			name:    "cluster nil but inline BackupSource.S3 true wins",
+			cluster: nil,
+			cr: &pxcv1.PerconaXtraDBClusterRestore{
+				Spec: pxcv1.PerconaXtraDBClusterRestoreSpec{
+					BackupSource: &pxcv1.PXCBackupStatus{
+						S3: &pxcv1.BackupStorageS3Spec{SkipBucketExists: true},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "BackupSource by name overrides cluster spec",
+			cluster: clusterWith(map[string]bool{
+				primaryStorage: false,
+				altStorage:     true,
+			}),
+			cr: &pxcv1.PerconaXtraDBClusterRestore{
+				Spec: pxcv1.PerconaXtraDBClusterRestoreSpec{
+					BackupSource: &pxcv1.PXCBackupStatus{StorageName: altStorage},
+				},
+			},
+			want: true,
+		},
+		{
+			name:    "inline BackupSource.S3 true overrides false at lower layer",
+			cluster: clusterWith(map[string]bool{primaryStorage: false}),
+			cr: &pxcv1.PerconaXtraDBClusterRestore{
+				Spec: pxcv1.PerconaXtraDBClusterRestoreSpec{
+					BackupSource: &pxcv1.PXCBackupStatus{
+						S3: &pxcv1.BackupStorageS3Spec{SkipBucketExists: true},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			// Inline BackupSource.S3 is a total override even when SkipBucketExists
+			// is at the zero value (false). Same behavior as Bucket/Region/etc.
+			name:    "inline BackupSource.S3 false demotes lower-layer true",
+			cluster: clusterWith(map[string]bool{primaryStorage: true}),
+			cr: &pxcv1.PerconaXtraDBClusterRestore{
+				Spec: pxcv1.PerconaXtraDBClusterRestoreSpec{
+					BackupSource: &pxcv1.PXCBackupStatus{
+						S3: &pxcv1.BackupStorageS3Spec{SkipBucketExists: false},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "PITR BackupSource by name overrides earlier layers",
+			cluster: clusterWith(map[string]bool{
+				primaryStorage: false,
+				altStorage:     true,
+			}),
+			cr: &pxcv1.PerconaXtraDBClusterRestore{
+				Spec: pxcv1.PerconaXtraDBClusterRestoreSpec{
+					PITR: &pxcv1.PITR{
+						BackupSource: &pxcv1.PXCBackupStatus{StorageName: altStorage},
+					},
+				},
+			},
+			pitr: true,
+			want: true,
+		},
+		{
+			name:    "inline PITR BackupSource.S3 has highest precedence",
+			cluster: clusterWith(map[string]bool{primaryStorage: false}),
+			cr: &pxcv1.PerconaXtraDBClusterRestore{
+				Spec: pxcv1.PerconaXtraDBClusterRestoreSpec{
+					BackupSource: &pxcv1.PXCBackupStatus{
+						S3: &pxcv1.BackupStorageS3Spec{SkipBucketExists: false},
+					},
+					PITR: &pxcv1.PITR{
+						BackupSource: &pxcv1.PXCBackupStatus{
+							S3: &pxcv1.BackupStorageS3Spec{SkipBucketExists: true},
+						},
+					},
+				},
+			},
+			pitr: true,
+			want: true,
+		},
+		{
+			name:    "PITR layers are ignored when pitr=false",
+			cluster: clusterWith(map[string]bool{primaryStorage: false}),
+			cr: &pxcv1.PerconaXtraDBClusterRestore{
+				Spec: pxcv1.PerconaXtraDBClusterRestoreSpec{
+					PITR: &pxcv1.PITR{
+						BackupSource: &pxcv1.PXCBackupStatus{
+							S3: &pxcv1.BackupStorageS3Spec{SkipBucketExists: true},
+						},
+					},
+				},
+			},
+			pitr: false,
+			want: false,
+		},
+		{
+			name:    "pitr=true but PITR section nil is a no-op",
+			cluster: clusterWith(map[string]bool{primaryStorage: false}),
+			cr:      &pxcv1.PerconaXtraDBClusterRestore{},
+			pitr:    true,
+			want:    false,
+		},
+		{
+			name:    "BackupSource by name pointing to missing storage leaves prior value",
+			cluster: clusterWith(map[string]bool{primaryStorage: true}),
+			cr: &pxcv1.PerconaXtraDBClusterRestore{
+				Spec: pxcv1.PerconaXtraDBClusterRestoreSpec{
+					BackupSource: &pxcv1.PXCBackupStatus{StorageName: "missing"},
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bcp := tt.bcp
+			if bcp == nil {
+				bcp = &pxcv1.PerconaXtraDBClusterBackup{Spec: pxcv1.PXCBackupSpec{StorageName: primaryStorage}}
+			}
+			got := resolveSkipBucketExists(tt.cluster, tt.cr, bcp, tt.pitr)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

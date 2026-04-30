@@ -23,7 +23,6 @@ import (
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/config"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/statefulset"
-	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/users"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/util"
 )
@@ -499,8 +498,11 @@ func restoreJobEnvs(
 		Value: strconv.FormatBool(verifyTLS),
 	})
 
-	if env := storage.SkipBucketExistsEnv(); env != nil {
-		envs = append(envs, *env)
+	if resolveSkipBucketExists(cluster, cr, bcp, pitr) {
+		envs = append(envs, corev1.EnvVar{
+			Name:  "S3_SKIP_BUCKET_EXISTS",
+			Value: "true",
+		})
 	}
 
 	if features.Enabled(ctx, features.XtrabackupSidecar) {
@@ -530,6 +532,47 @@ func restoreJobEnvs(
 		envs,
 		cr.Spec.ContainerOptions.GetEnvVar(cluster, bcp.Spec.StorageName),
 	), nil
+}
+
+// resolveSkipBucketExists computes the effective SkipBucketExists value for a
+// restore job by walking the precedence chain, lowest to highest:
+//
+//  1. cluster.Spec.Backup.Storages[bcp.Spec.StorageName].S3
+//  2. cluster.Spec.Backup.Storages[cr.Spec.BackupSource.StorageName].S3
+//  3. cr.Spec.BackupSource.S3                                  (inline override)
+//  4. cluster.Spec.Backup.Storages[cr.Spec.PITR.BackupSource.StorageName].S3
+//  5. cr.Spec.PITR.BackupSource.S3                             (inline PITR override)
+//
+// Each layer overrides the previous when present. An inline S3 block is
+// treated as a total override, consistent with how Bucket/Region/Endpoint and
+// other fields on BackupStorageS3Spec behave in the same chain.
+func resolveSkipBucketExists(cluster *api.PerconaXtraDBCluster, cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBackup, pitr bool) bool {
+	lookup := func(name string, current bool) bool {
+		if name == "" || cluster == nil || cluster.Spec.Backup == nil {
+			return current
+		}
+		if s, ok := cluster.Spec.Backup.Storages[name]; ok && s.S3 != nil {
+			return s.S3.SkipBucketExists
+		}
+		return current
+	}
+
+	skip := lookup(bcp.Spec.StorageName, false)
+	if bs := cr.Spec.BackupSource; bs != nil {
+		skip = lookup(bs.StorageName, skip)
+		if bs.S3 != nil {
+			skip = bs.S3.SkipBucketExists
+		}
+	}
+	if pitr && cr.Spec.PITR != nil {
+		if bs := cr.Spec.PITR.BackupSource; bs != nil {
+			skip = lookup(bs.StorageName, skip)
+			if bs.S3 != nil {
+				skip = bs.S3.SkipBucketExists
+			}
+		}
+	}
+	return skip
 }
 
 func azureEnvs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBackup, cluster *api.PerconaXtraDBCluster, destination api.PXCBackupDestination, pitr bool) ([]corev1.EnvVar, error) {

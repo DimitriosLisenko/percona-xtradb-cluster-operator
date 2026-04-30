@@ -26,16 +26,17 @@ func TestGetS3Options(t *testing.T) {
 	boolPtr := func(b bool) *bool { return &b }
 
 	tests := []struct {
-		name            string
-		destination     string
-		bucket          string
-		accessKeyID     string
-		secretAccessKey string
-		endpoint        string
-		forcePathStyle  bool
-		region          string
-		verifyTLS       *bool
-		storage         *api.BackupStorageSpec
+		name             string
+		destination      string
+		bucket           string
+		accessKeyID      string
+		secretAccessKey  string
+		endpoint         string
+		forcePathStyle   bool
+		skipBucketExists bool
+		region           string
+		verifyTLS        *bool
+		storage          *api.BackupStorageSpec
 
 		expected    *S3Options
 		expectedErr string
@@ -128,16 +129,24 @@ func TestGetS3Options(t *testing.T) {
 			},
 		},
 		{
-			name:      "verifyTLS in backup and cluster",
-			bucket:    "somebucket",
-			verifyTLS: boolPtr(true),
+			// Strengthened (consensus item 13): the storage fixture sets both
+			// VerifyTLS and an S3 subfield with SkipBucketExists=true so that we
+			// can assert the two fields are resolved independently.
+			name:             "verifyTLS and skipBucketExists in backup and cluster",
+			bucket:           "somebucket",
+			verifyTLS:        boolPtr(true),
+			skipBucketExists: false,
 			storage: &api.BackupStorageSpec{
 				VerifyTLS: boolPtr(false),
+				S3: &api.BackupStorageS3Spec{
+					SkipBucketExists: true,
+				},
 			},
 			expected: &S3Options{
-				BucketName: "somebucket",
-				VerifyTLS:  false,
-				Region:     "us-east-1",
+				BucketName:       "somebucket",
+				VerifyTLS:        false,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
 			},
 		},
 		{
@@ -175,6 +184,77 @@ func TestGetS3Options(t *testing.T) {
 			forcePathStyle: true,
 			expectedErr:    `failed to get bucket and prefix: failed to parse endpointUrl: failed to parse endpointUrl: parse "https://s3.example.com/%invalid": invalid URL escape "%in"`,
 		},
+		{
+			// Snapshot-as-default with no cluster: snapshot value is honored.
+			name:             "snapshot false honored when cluster is nil",
+			bucket:           "somebucket",
+			skipBucketExists: false,
+			expected: &S3Options{
+				BucketName: "somebucket",
+				VerifyTLS:  true,
+				Region:     "us-east-1",
+			},
+		},
+		{
+			// Paired case (consensus item 14): same shape as above but snapshot
+			// is true. Together these two cases pin the cluster-nil semantics:
+			// the snapshot is used as-is rather than being overridden.
+			name:             "snapshot true honored when cluster is nil",
+			bucket:           "somebucket",
+			skipBucketExists: true,
+			expected: &S3Options{
+				BucketName:       "somebucket",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
+			},
+		},
+		{
+			name:   "skip bucket exists from cluster spec true",
+			bucket: "somebucket",
+			storage: &api.BackupStorageSpec{
+				S3: &api.BackupStorageS3Spec{
+					SkipBucketExists: true,
+				},
+			},
+			expected: &S3Options{
+				BucketName:       "somebucket",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
+			},
+		},
+		{
+			name:             "cluster spec false overrides snapshot true",
+			bucket:           "somebucket",
+			skipBucketExists: true,
+			storage: &api.BackupStorageSpec{
+				S3: &api.BackupStorageS3Spec{
+					SkipBucketExists: false,
+				},
+			},
+			expected: &S3Options{
+				BucketName: "somebucket",
+				VerifyTLS:  true,
+				Region:     "us-east-1",
+			},
+		},
+		{
+			name:             "cluster spec true overrides snapshot false",
+			bucket:           "somebucket",
+			skipBucketExists: false,
+			storage: &api.BackupStorageSpec{
+				S3: &api.BackupStorageS3Spec{
+					SkipBucketExists: true,
+				},
+			},
+			expected: &S3Options{
+				BucketName:       "somebucket",
+				VerifyTLS:        true,
+				Region:           "us-east-1",
+				SkipBucketExists: true,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -185,6 +265,7 @@ func TestGetS3Options(t *testing.T) {
 				Region:            tt.region,
 				EndpointURL:       tt.endpoint,
 				ForcePathStyle:    tt.forcePathStyle,
+				SkipBucketExists:  tt.skipBucketExists,
 			}, nil)
 
 			var cluster *api.PerconaXtraDBCluster
@@ -216,8 +297,14 @@ func TestGetS3Options(t *testing.T) {
 			cl := fake.NewClientBuilder().WithRuntimeObjects(objs...).Build()
 
 			opts, err := getS3OptionsFromBackup(ctx, cl, cluster, backup)
-			if err != nil && tt.expectedErr != err.Error() {
-				t.Fatal(err)
+			if (err != nil) != (tt.expectedErr != "") {
+				t.Fatalf("error mismatch: got %v, expected %q", err, tt.expectedErr)
+			}
+			if tt.expectedErr != "" {
+				if err.Error() != tt.expectedErr {
+					t.Fatalf("error message mismatch: got %q, expected %q", err.Error(), tt.expectedErr)
+				}
+				return
 			}
 			if !reflect.DeepEqual(opts, tt.expected) {
 				t.Fatalf("expected: %+v, got: %+v", tt.expected, opts)
@@ -339,8 +426,14 @@ func TestGetAzureOptions(t *testing.T) {
 			cl := fake.NewClientBuilder().WithRuntimeObjects(objs...).Build()
 
 			opts, err := getAzureOptionsFromBackup(ctx, cl, backup)
-			if err != nil && tt.expectedErr != err.Error() {
-				t.Fatal(err)
+			if (err != nil) != (tt.expectedErr != "") {
+				t.Fatalf("error mismatch: got %v, expected %q", err, tt.expectedErr)
+			}
+			if tt.expectedErr != "" {
+				if err.Error() != tt.expectedErr {
+					t.Fatalf("error message mismatch: got %q, expected %q", err.Error(), tt.expectedErr)
+				}
+				return
 			}
 			if !reflect.DeepEqual(opts, tt.expected) {
 				t.Fatalf("expected: %+v, got: %+v", tt.expected, opts)

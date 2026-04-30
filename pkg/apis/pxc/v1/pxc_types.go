@@ -860,6 +860,11 @@ type BackupStorageS3Spec struct {
 	EndpointURL       string                    `json:"endpointUrl,omitempty"`
 	CABundle          *corev1.SecretKeySelector `json:"caBundle,omitempty"`
 	ForcePathStyle    bool                      `json:"forcePathStyle,omitempty"`
+	// SkipBucketExists, when true, suppresses the s3:HeadBucket pre-check the
+	// operator performs before backup/restore operations. Useful when the IAM
+	// principal cannot be granted s3:ListBucket. Defaults to false.
+	// +optional
+	SkipBucketExists bool `json:"skipBucketExists,omitempty"`
 }
 
 func (b *BackupStorageS3Spec) endpointAndPath() (string, string, error) {

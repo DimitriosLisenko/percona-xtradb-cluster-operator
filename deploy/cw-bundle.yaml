@@ -361,6 +361,8 @@ spec:
                     type: boolean
                   region:
                     type: string
+                  skipBucketExists:
+                    type: boolean
                 type: object
               sslInternalSecretName:
                 type: string
@@ -618,6 +620,8 @@ spec:
                         type: boolean
                       region:
                         type: string
+                      skipBucketExists:
+                        type: boolean
                     type: object
                   sslInternalSecretName:
                     type: string
@@ -919,6 +923,8 @@ spec:
                             type: boolean
                           region:
                             type: string
+                          skipBucketExists:
+                            type: boolean
                         type: object
                       sslInternalSecretName:
                         type: string
@@ -2280,6 +2286,8 @@ spec:
                               type: boolean
                             region:
                               type: string
+                            skipBucketExists:
+                              type: boolean
                           type: object
                         schedulerName:
                           type: string
@@ -12560,8 +12568,6 @@ spec:
           value: "false"
         - name: S3_WORKERS_LIMIT
           value: "10"
-        - name: S3_SKIP_BUCKET_EXISTS
-          value: "false"
         - name: MAX_CONCURRENT_RECONCILES
           value: "1"
         - name: PXCO_FEATURE_GATES
