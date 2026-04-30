@@ -23,7 +23,6 @@ import (
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/config"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/app/statefulset"
-	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/backup/storage"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/pxc/users"
 	"github.com/percona/percona-xtradb-cluster-operator/pkg/util"
 )
@@ -499,10 +498,6 @@ func restoreJobEnvs(
 		Value: strconv.FormatBool(verifyTLS),
 	})
 
-	if env := storage.SkipBucketExistsEnv(); env != nil {
-		envs = append(envs, *env)
-	}
-
 	if features.Enabled(ctx, features.XtrabackupSidecar) {
 		envs = append(envs, corev1.EnvVar{
 			Name:  "XTRABACKUP_ENABLED",
@@ -678,6 +673,12 @@ func s3Envs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBa
 			Value: "true",
 		})
 	}
+	if bcp.Status.S3.SkipBucketExists {
+		envs = append(envs, corev1.EnvVar{
+			Name:  "S3_SKIP_BUCKET_EXISTS",
+			Value: "true",
+		})
+	}
 	if pitr {
 		bucket := ""
 		storageS3 := new(api.BackupStorageS3Spec)
@@ -764,6 +765,14 @@ func s3Envs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBa
 			envs = append(envs,
 				corev1.EnvVar{
 					Name:  "BINLOG_S3_FORCE_PATH",
+					Value: "true",
+				},
+			)
+		}
+		if storageS3.SkipBucketExists {
+			envs = append(envs,
+				corev1.EnvVar{
+					Name:  "BINLOG_S3_SKIP_BUCKET_EXISTS",
 					Value: "true",
 				},
 			)

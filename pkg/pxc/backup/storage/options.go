@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"os"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -12,22 +11,6 @@ import (
 	api "github.com/percona/percona-xtradb-cluster-operator/pkg/apis/pxc/v1"
 	xbscapi "github.com/percona/percona-xtradb-cluster-operator/pkg/xtrabackup/api"
 )
-
-// SkipBucketExistsEnvVar is the environment variable name that controls
-// whether to skip S3 bucket existence checks (HeadBucket API calls).
-const SkipBucketExistsEnvVar = "S3_SKIP_BUCKET_EXISTS"
-
-// SkipBucketExistsEnv returns a corev1.EnvVar for propagating the skip-bucket-exists
-// flag to child pods, or nil if the flag is not enabled on the operator.
-func SkipBucketExistsEnv() *corev1.EnvVar {
-	if os.Getenv(SkipBucketExistsEnvVar) == "true" {
-		return &corev1.EnvVar{
-			Name:  SkipBucketExistsEnvVar,
-			Value: "true",
-		}
-	}
-	return nil
-}
 
 type Options interface {
 	Type() api.BackupStorageType
@@ -72,7 +55,7 @@ func GetOptionsFromBackupConfig(cfg *xbscapi.BackupConfig) (Options, error) {
 			Region:           cfg.S3.Region,
 			VerifyTLS:        cfg.VerifyTls,
 			ForcePathStyle:   cfg.S3.ForcePathStyle,
-			SkipBucketExists: cfg.SkipBucketExists,
+			SkipBucketExists: cfg.S3.SkipBucketExists,
 		}, nil
 	case xbscapi.BackupStorageType_AZURE:
 		return &AzureOptions{
@@ -229,7 +212,7 @@ func getS3Options(
 		VerifyTLS:        verify,
 		CABundle:         caBundle,
 		ForcePathStyle:   s3.ForcePathStyle,
-		SkipBucketExists: os.Getenv(SkipBucketExistsEnvVar) == "true",
+		SkipBucketExists: s3.SkipBucketExists,
 	}, nil
 }
 
@@ -297,7 +280,7 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 		VerifyTLS:        verifyTLS,
 		CABundle:         caBundle,
 		ForcePathStyle:   backup.Status.S3.ForcePathStyle,
-		SkipBucketExists: os.Getenv(SkipBucketExistsEnvVar) == "true",
+		SkipBucketExists: backup.Status.S3.SkipBucketExists,
 	}, nil
 }
 
