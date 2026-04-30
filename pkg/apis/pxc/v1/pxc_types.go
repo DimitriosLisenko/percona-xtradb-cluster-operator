@@ -875,6 +875,15 @@ type BackupStorageS3Spec struct {
 	EndpointURL       string                    `json:"endpointUrl,omitempty"`
 	CABundle          *corev1.SecretKeySelector `json:"caBundle,omitempty"`
 	ForcePathStyle    bool                      `json:"forcePathStyle,omitempty"`
+	// SkipBucketExists, when true, suppresses the upfront s3:HeadBucket
+	// pre-check the operator and pod-side workers perform on startup. Object
+	// operations (ListObjects, GetObject, PutObject, DeleteObject) still run
+	// normally and continue to require s3:ListBucket on the bucket — typically
+	// scoped via an s3:prefix IAM condition. Useful when the IAM principal can
+	// be granted prefix-scoped s3:ListBucket but not bucket-level HeadBucket.
+	// Defaults to false.
+	// +optional
+	SkipBucketExists bool `json:"skipBucketExists,omitempty"`
 }
 
 func (b *BackupStorageS3Spec) endpointAndPath() (string, string, error) {
