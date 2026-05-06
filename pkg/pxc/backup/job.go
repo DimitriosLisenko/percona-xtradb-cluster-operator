@@ -343,9 +343,9 @@ func SetStorageS3(ctx context.Context, job *batchv1.JobSpec, cr *api.PerconaXtra
 			Value: "true",
 		})
 	}
-	if s3.SkipBucketExists {
+	if s3.SkipBucketExistsCheck {
 		job.Template.Spec.Containers[0].Env = append(job.Template.Spec.Containers[0].Env, corev1.EnvVar{
-			Name:  "S3_SKIP_BUCKET_EXISTS",
+			Name:  "S3_SKIP_BUCKET_EXISTS_CHECK",
 			Value: "true",
 		})
 	}

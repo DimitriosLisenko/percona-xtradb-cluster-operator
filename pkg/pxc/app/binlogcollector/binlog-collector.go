@@ -307,9 +307,9 @@ func getStorageEnvs(cr *api.PerconaXtraDBCluster) ([]corev1.EnvVar, error) {
 				Value: "true",
 			})
 		}
-		if storage.S3.SkipBucketExists {
+		if storage.S3.SkipBucketExistsCheck {
 			envs = append(envs, corev1.EnvVar{
-				Name:  "S3_SKIP_BUCKET_EXISTS",
+				Name:  "S3_SKIP_BUCKET_EXISTS_CHECK",
 				Value: "true",
 			})
 		}

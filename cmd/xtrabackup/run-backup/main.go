@@ -133,7 +133,7 @@ func setS3Config(req *xbscapi.CreateBackupRequest) {
 		SessionToken:     os.Getenv("S3_SESSION_TOKEN"),
 		StorageClass:     os.Getenv("S3_STORAGE_CLASS"),
 		ForcePathStyle:   os.Getenv("S3_FORCE_PATH") == "true",
-		SkipBucketExists: os.Getenv("S3_SKIP_BUCKET_EXISTS") == "true",
+		SkipBucketExistsCheck: os.Getenv("S3_SKIP_BUCKET_EXISTS_CHECK") == "true",
 	}
 }
 

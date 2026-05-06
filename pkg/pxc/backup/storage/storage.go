@@ -42,7 +42,7 @@ func NewClient(ctx context.Context, opts Options) (Storage, error) {
 		if !ok {
 			return nil, errors.New("invalid options type")
 		}
-		return NewS3(ctx, opts.Endpoint, opts.AccessKeyID, opts.SecretAccessKey, opts.SessionToken, opts.BucketName, opts.Prefix, opts.Region, opts.VerifyTLS, opts.CABundle, opts.ForcePathStyle, opts.SkipBucketExists)
+		return NewS3(ctx, opts.Endpoint, opts.AccessKeyID, opts.SecretAccessKey, opts.SessionToken, opts.BucketName, opts.Prefix, opts.Region, opts.VerifyTLS, opts.CABundle, opts.ForcePathStyle, opts.SkipBucketExistsCheck)
 	case api.BackupStorageAzure:
 		opts, ok := opts.(*AzureOptions)
 		if !ok {
@@ -73,7 +73,7 @@ func NewS3(
 	verifyTLS bool,
 	caBundle []byte,
 	forcePathStyle bool,
-	skipBucketExists bool,
+	skipBucketExistsCheck bool,
 ) (Storage, error) {
 	if endpoint == "" {
 		endpoint = "https://s3.amazonaws.com"
@@ -116,7 +116,7 @@ func NewS3(
 		return nil, errors.Wrap(err, "new minio client")
 	}
 
-	if skipBucketExists {
+	if skipBucketExistsCheck {
 		logf.FromContext(ctx).Info("Skipping S3 bucket existence check", "bucket", bucketName)
 	} else {
 		bucketExists, err := minioClient.BucketExists(ctx, bucketName)

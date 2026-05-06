@@ -55,7 +55,7 @@ func GetOptionsFromBackupConfig(cfg *xbscapi.BackupConfig) (Options, error) {
 			Region:           cfg.S3.Region,
 			VerifyTLS:        cfg.VerifyTls,
 			ForcePathStyle:   cfg.S3.ForcePathStyle,
-			SkipBucketExists: cfg.S3.SkipBucketExists,
+			SkipBucketExistsCheck: cfg.S3.SkipBucketExistsCheck,
 		}, nil
 	case xbscapi.BackupStorageType_AZURE:
 		return &AzureOptions{
@@ -212,7 +212,7 @@ func getS3Options(
 		VerifyTLS:        verify,
 		CABundle:         caBundle,
 		ForcePathStyle:   s3.ForcePathStyle,
-		SkipBucketExists: s3.SkipBucketExists,
+		SkipBucketExistsCheck: s3.SkipBucketExistsCheck,
 	}, nil
 }
 
@@ -280,7 +280,7 @@ func getS3OptionsFromBackup(ctx context.Context, cl client.Client, cluster *api.
 		VerifyTLS:        verifyTLS,
 		CABundle:         caBundle,
 		ForcePathStyle:   backup.Status.S3.ForcePathStyle,
-		SkipBucketExists: backup.Status.S3.SkipBucketExists,
+		SkipBucketExistsCheck: backup.Status.S3.SkipBucketExistsCheck,
 	}, nil
 }
 
@@ -297,7 +297,7 @@ type S3Options struct {
 	VerifyTLS        bool
 	CABundle         []byte
 	ForcePathStyle   bool
-	SkipBucketExists bool
+	SkipBucketExistsCheck bool
 }
 
 func (o *S3Options) Type() api.BackupStorageType {

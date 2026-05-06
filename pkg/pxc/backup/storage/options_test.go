@@ -33,7 +33,7 @@ func TestGetS3Options(t *testing.T) {
 		secretAccessKey  string
 		endpoint         string
 		forcePathStyle   bool
-		skipBucketExists bool
+		skipBucketExistsCheck bool
 		region           string
 		verifyTLS        *bool
 		storage          *api.BackupStorageSpec
@@ -177,14 +177,14 @@ func TestGetS3Options(t *testing.T) {
 			expectedErr:    `failed to get bucket and prefix: failed to parse endpointUrl: failed to parse endpointUrl: parse "https://s3.example.com/%invalid": invalid URL escape "%in"`,
 		},
 		{
-			name:             "skip bucket exists is propagated to options",
+			name:             "skip bucket exists check is propagated to options",
 			bucket:           "somebucket",
-			skipBucketExists: true,
+			skipBucketExistsCheck: true,
 			expected: &S3Options{
 				BucketName:       "somebucket",
 				VerifyTLS:        true,
 				Region:           "us-east-1",
-				SkipBucketExists: true,
+				SkipBucketExistsCheck: true,
 			},
 		},
 	}
@@ -197,7 +197,7 @@ func TestGetS3Options(t *testing.T) {
 				Region:            tt.region,
 				EndpointURL:       tt.endpoint,
 				ForcePathStyle:    tt.forcePathStyle,
-				SkipBucketExists:  tt.skipBucketExists,
+				SkipBucketExistsCheck:  tt.skipBucketExistsCheck,
 			}, nil)
 
 			var cluster *api.PerconaXtraDBCluster

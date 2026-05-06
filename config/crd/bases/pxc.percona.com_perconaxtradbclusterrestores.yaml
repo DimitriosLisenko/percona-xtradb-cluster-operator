@@ -229,7 +229,7 @@ spec:
                         type: boolean
                       region:
                         type: string
-                      skipBucketExists:
+                      skipBucketExistsCheck:
                         type: boolean
                     type: object
                   sslInternalSecretName:
@@ -532,7 +532,7 @@ spec:
                             type: boolean
                           region:
                             type: string
-                          skipBucketExists:
+                          skipBucketExistsCheck:
                             type: boolean
                         type: object
                       sslInternalSecretName:

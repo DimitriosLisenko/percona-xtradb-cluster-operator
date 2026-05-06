@@ -875,7 +875,7 @@ type BackupStorageS3Spec struct {
 	EndpointURL       string                    `json:"endpointUrl,omitempty"`
 	CABundle          *corev1.SecretKeySelector `json:"caBundle,omitempty"`
 	ForcePathStyle    bool                      `json:"forcePathStyle,omitempty"`
-	SkipBucketExists  bool                      `json:"skipBucketExists,omitempty"`
+	SkipBucketExistsCheck  bool                      `json:"skipBucketExistsCheck,omitempty"`
 }
 
 func (b *BackupStorageS3Spec) endpointAndPath() (string, string, error) {

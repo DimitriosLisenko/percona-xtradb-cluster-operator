@@ -673,9 +673,9 @@ func s3Envs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBa
 			Value: "true",
 		})
 	}
-	if bcp.Status.S3.SkipBucketExists {
+	if bcp.Status.S3.SkipBucketExistsCheck {
 		envs = append(envs, corev1.EnvVar{
-			Name:  "S3_SKIP_BUCKET_EXISTS",
+			Name:  "S3_SKIP_BUCKET_EXISTS_CHECK",
 			Value: "true",
 		})
 	}
@@ -769,10 +769,10 @@ func s3Envs(cr *api.PerconaXtraDBClusterRestore, bcp *api.PerconaXtraDBClusterBa
 				},
 			)
 		}
-		if storageS3.SkipBucketExists {
+		if storageS3.SkipBucketExistsCheck {
 			envs = append(envs,
 				corev1.EnvVar{
-					Name:  "BINLOG_S3_SKIP_BUCKET_EXISTS",
+					Name:  "BINLOG_S3_SKIP_BUCKET_EXISTS_CHECK",
 					Value: "true",
 				},
 			)
