@@ -103,13 +103,13 @@ type Config struct {
 }
 
 type BackupS3 struct {
-	Endpoint         string `env:"ENDPOINT" envDefault:"s3.amazonaws.com"`
-	AccessKeyID      string `env:"ACCESS_KEY_ID,required"`
-	AccessKey        string `env:"SECRET_ACCESS_KEY,required"`
-	SessionToken     string `env:"S3_SESSION_TOKEN"`
-	BucketURL        string `env:"S3_BUCKET_URL,required"`
-	Region           string `env:"DEFAULT_REGION,required"`
-	ForcePath        bool   `env:"S3_FORCE_PATH"`
+	Endpoint              string `env:"ENDPOINT" envDefault:"s3.amazonaws.com"`
+	AccessKeyID           string `env:"ACCESS_KEY_ID,required"`
+	AccessKey             string `env:"SECRET_ACCESS_KEY,required"`
+	SessionToken          string `env:"S3_SESSION_TOKEN"`
+	BucketURL             string `env:"S3_BUCKET_URL,required"`
+	Region                string `env:"DEFAULT_REGION,required"`
+	ForcePath             bool   `env:"S3_FORCE_PATH"`
 	SkipBucketExistsCheck bool   `env:"S3_SKIP_BUCKET_EXISTS_CHECK"`
 }
 

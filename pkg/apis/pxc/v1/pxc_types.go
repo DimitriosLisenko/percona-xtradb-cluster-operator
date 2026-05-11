@@ -869,13 +869,13 @@ const (
 )
 
 type BackupStorageS3Spec struct {
-	Bucket            string                    `json:"bucket"`
-	CredentialsSecret string                    `json:"credentialsSecret"`
-	Region            string                    `json:"region,omitempty"`
-	EndpointURL       string                    `json:"endpointUrl,omitempty"`
-	CABundle          *corev1.SecretKeySelector `json:"caBundle,omitempty"`
-	ForcePathStyle    bool                      `json:"forcePathStyle,omitempty"`
-	SkipBucketExistsCheck  bool                      `json:"skipBucketExistsCheck,omitempty"`
+	Bucket                string                    `json:"bucket"`
+	CredentialsSecret     string                    `json:"credentialsSecret"`
+	Region                string                    `json:"region,omitempty"`
+	EndpointURL           string                    `json:"endpointUrl,omitempty"`
+	CABundle              *corev1.SecretKeySelector `json:"caBundle,omitempty"`
+	ForcePathStyle        bool                      `json:"forcePathStyle,omitempty"`
+	SkipBucketExistsCheck bool                      `json:"skipBucketExistsCheck,omitempty"`
 }
 
 func (b *BackupStorageS3Spec) endpointAndPath() (string, string, error) {
