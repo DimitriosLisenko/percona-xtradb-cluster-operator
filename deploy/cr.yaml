@@ -12,6 +12,7 @@ metadata:
 spec:
   crVersion: 1.20.0
 #  enableVolumeExpansion: false
+#  enableExternalAutoscaling: false
 #  ignoreAnnotations:
 #    - iam.amazonaws.com/role
 #  ignoreLabels:
@@ -591,6 +592,23 @@ spec:
       requests:
         memory: 100M
         cpu: 200m
+#    logRotate:
+#      schedule: "*/5 * * * *"
+#      configuration: |
+#        /var/lib/mysql/GRA_*.log {
+#          daily
+#          rotate 7
+#          missingok
+#          notifempty
+#          compress
+#          delaycompress
+#          sharedscripts
+#          postrotate
+#            /usr/bin/find /var/lib/mysql/ -name GRA_*.log -mtime +7 -delete
+#          endscript
+#        }
+#      extraConfig:
+#        name: my-logrotate-config
 
 #  users:
 #  - name: my-user
