@@ -2489,6 +2489,8 @@ spec:
                 type: string
               enableCRValidationWebhook:
                 type: boolean
+              enableExternalAutoscaling:
+                type: boolean
               enableVolumeExpansion:
                 type: boolean
               haproxy:
